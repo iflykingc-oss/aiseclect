@@ -71,15 +71,18 @@ def tweet_generator_node(
         HumanMessage(content=user_prompt)  # 用户提示词
     ]
     
-    # 使用配置中的模型参数（启用思考模式）
+    # 使用配置中的模型参数（禁用思考模式，直接返回JSON）
     response = client.invoke(
         messages=messages,
         model=llm_config.get("model", "doubao-seed-2-0-pro-260215"),
         temperature=llm_config.get("temperature", 0.7),
         top_p=llm_config.get("top_p", 0.95),
         max_completion_tokens=llm_config.get("max_completion_tokens", 8192),
-        thinking=llm_config.get("thinking", "enabled")
+        thinking="disabled"  # 禁用思考模式，确保返回纯JSON
     )
+    
+    logger.info(f"LLM响应类型: {type(response.content)}")
+    logger.info(f"LLM响应内容长度: {len(str(response.content))}")
     
     # 解析LLM返回的推文草稿
     tweet_drafts: List[TweetDraft] = []
@@ -148,7 +151,11 @@ def tweet_generator_node(
     
     except Exception as e:
         logger.error(f"推文结果解析失败: {str(e)}")
+        logger.error(f"LLM完整响应内容（前500字符）: {content_text[:500]}")
+        logger.error(f"提取的JSON字符串: {json_str[:300]}")
+        
         # 如果解析失败，为每个素材生成默认推文
+        logger.info(f"启用降级处理，素材数量: {len(state.materials)}")
         for mat in state.materials:
             timestamp = int(time.time())
             rand_num = random.randint(1000, 9999)
@@ -173,6 +180,8 @@ def tweet_generator_node(
                 status="待审核"
             )
             tweet_drafts.append(tweet_draft)
+        
+        logger.info(f"降级处理完成，生成推文数量: {len(tweet_drafts)}")
     
     # 统计小红书内容数量
     xiaohongshu_count = len([t for t in tweet_drafts if t.xiaohongshu_content])
