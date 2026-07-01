@@ -60,6 +60,7 @@ class GlobalState(BaseModel):
     # 飞书表格信息
     feishu_app_token: str = Field(default="", description="飞书多维表格App Token")
     feishu_table_id: str = Field(default="", description="飞书数据表ID")
+    feishu_table_url: str = Field(default="", description="飞书表格共享链接（用于通知）")
     
     # 采集结果
     aihot_materials: List[RawMaterial] = Field(default=[], description="AIHOT雷达采集素材")
@@ -243,6 +244,7 @@ class FeishuWriterOutput(BaseModel):
     """飞书表格写入节点输出"""
     added_record_ids: List[str] = Field(default=[], description="新增记录ID列表")
     added_count: int = Field(default=0, description="新增记录数量")
+    feishu_table_url: str = Field(default="", description="飞书表格共享链接")
 
 
 # 8. 飞书通知节点
@@ -252,8 +254,7 @@ class FeishuNotifierInput(BaseModel):
     new_material_count: int = Field(default=0, description="新增素材数量")
     tweet_count: int = Field(default=0, description="生成推文数量")
     added_record_ids: List[str] = Field(default=[], description="新增记录ID")
-    feishu_app_token: str = Field(..., description="飞书多维表格App Token（用于生成表格链接）")
-    feishu_table_id: str = Field(..., description="飞书数据表ID（用于生成表格链接）")
+    feishu_table_url: str = Field(..., description="飞书表格共享链接（从写入节点获取）")
 
 
 class FeishuNotifierOutput(BaseModel):
