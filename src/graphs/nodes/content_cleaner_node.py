@@ -32,7 +32,7 @@ def content_cleaner_node(
     
     cleaned_materials: List[ScoredMaterial] = []
     
-    for material in state.materials:
+    for material in state.scored_materials:
         # 获取素材的详细内容（如果已有summary则使用）
         content = None
         

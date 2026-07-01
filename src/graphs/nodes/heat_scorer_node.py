@@ -44,7 +44,7 @@ def heat_scorer_node(
     
     # 准备素材数据（转换为JSON）
     materials_data = []
-    for mat in state.materials:
+    for mat in state.deduplicated_materials:
         materials_data.append({
             "url": mat.url,
             "title": mat.title,
@@ -109,7 +109,7 @@ def heat_scorer_node(
         score_results = json.loads(json_str)
         
         # 匹配素材和评分结果
-        for i, mat in enumerate(state.materials):
+        for i, mat in enumerate(state.deduplicated_materials):
             # 查找对应的评分结果
             score_data = None
             for result in score_results:
@@ -154,7 +154,7 @@ def heat_scorer_node(
     except Exception as e:
         logger.error(f"评分结果解析失败: {str(e)}")
         # 如果解析失败，所有素材使用默认评分
-        for mat in state.materials:
+        for mat in state.deduplicated_materials:
             scored_mat = ScoredMaterial(
                 url=mat.url,
                 title=mat.title,

@@ -209,7 +209,7 @@ class DedupFilterOutput(BaseModel):
 
 class HeatScorerInput(BaseModel):
     """AI热度打分节点输入"""
-    materials: List[StandardMaterial] = Field(default=[], description="待打分的素材列表")
+    deduplicated_materials: List[StandardMaterial] = Field(default=[], description="去重后的素材列表（从上游接收）")
 
 
 class HeatScorerOutput(BaseModel):
@@ -222,7 +222,7 @@ class HeatScorerOutput(BaseModel):
 
 class ContentCleanerInput(BaseModel):
     """网页精读清洗节点输入"""
-    materials: List[ScoredMaterial] = Field(default=[], description="待清洗的素材列表")
+    scored_materials: List[ScoredMaterial] = Field(default=[], description="打分后的素材列表（从热度打分节点接收）")
 
 
 class ContentCleanerOutput(BaseModel):
@@ -234,7 +234,7 @@ class ContentCleanerOutput(BaseModel):
 
 class TweetGeneratorInput(BaseModel):
     """推文生成节点输入"""
-    materials: List[ScoredMaterial] = Field(default=[], description="待生成推文的素材列表")
+    cleaned_materials: List[ScoredMaterial] = Field(default=[], description="清洗后的素材列表（从网页清洗节点接收）")
 
 
 class TweetGeneratorOutput(BaseModel):

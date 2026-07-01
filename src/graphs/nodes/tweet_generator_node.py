@@ -31,6 +31,19 @@ def tweet_generator_node(
     """
     ctx = runtime.context
     
+    # 检查是否有输入数据
+    materials_count = len(state.cleaned_materials)
+    logger.info(f"推文生成节点开始执行，接收到 {materials_count} 条清洗后的素材")
+    
+    # 如果没有素材，返回空结果
+    if not state.cleaned_materials:
+        logger.warning("无打分后的素材，跳过推文生成")
+        return TweetGeneratorOutput(
+            tweet_drafts=[],
+            total_count=0,
+            xiaohongshu_count=0
+        )
+    
     # 读取LLM配置文件
     cfg_file = os.path.join(
         os.getenv("COZE_WORKSPACE_PATH"),
@@ -46,7 +59,7 @@ def tweet_generator_node(
     
     # 准备素材数据（转换为JSON）
     materials_data = []
-    for mat in state.materials:
+    for mat in state.cleaned_materials:
         materials_data.append({
             "url": mat.url,
             "title": mat.title,
@@ -58,6 +71,7 @@ def tweet_generator_node(
         })
     
     materials_json = json.dumps(materials_data, ensure_ascii=False, indent=2)
+    logger.info(f"准备调用LLM，素材JSON长度: {len(materials_json)}")
     
     # 使用jinja2模板渲染用户提示词
     up_tpl = Template(up)
@@ -86,10 +100,11 @@ def tweet_generator_node(
     
     # 解析LLM返回的推文草稿
     tweet_drafts: List[TweetDraft] = []
+    content_text = ""
+    json_str = ""
     
     try:
         # 处理response.content
-        content_text = ""
         if isinstance(response.content, str):
             content_text = response.content.strip()
         elif isinstance(response.content, list):
@@ -98,6 +113,9 @@ def tweet_generator_node(
                     content_text += item
                 elif isinstance(item, dict) and item.get("type") == "text":
                     content_text += item.get("text", "")
+        
+        # 记录LLM响应（截取前500字符）
+        logger.info(f"LLM响应内容（前500字符）: {content_text[:500]}")
         
         # 提取JSON部分
         if "```json" in content_text:
@@ -110,6 +128,8 @@ def tweet_generator_node(
             json_str = content_text[json_start:json_end]
         else:
             json_str = content_text
+        
+        logger.info(f"提取的JSON字符串长度: {len(json_str)}")
         
         tweet_results = json.loads(json_str)
         
@@ -148,6 +168,8 @@ def tweet_generator_node(
                 tweet_draft.xiaohongshu_content = tweet_draft.xiaohongshu_content[:297] + "..."
             
             tweet_drafts.append(tweet_draft)
+        
+        logger.info(f"成功生成推文数量: {len(tweet_drafts)}")
     
     except Exception as e:
         logger.error(f"推文结果解析失败: {str(e)}")
@@ -155,8 +177,8 @@ def tweet_generator_node(
         logger.error(f"提取的JSON字符串: {json_str[:300]}")
         
         # 如果解析失败，为每个素材生成默认推文
-        logger.info(f"启用降级处理，素材数量: {len(state.materials)}")
-        for mat in state.materials:
+        logger.info(f"启用降级处理，素材数量: {len(state.cleaned_materials)}")
+        for mat in state.cleaned_materials:
             timestamp = int(time.time())
             rand_num = random.randint(1000, 9999)
             unique_id = f"tweet_{timestamp}_{rand_num}"
@@ -185,6 +207,8 @@ def tweet_generator_node(
     
     # 统计小红书内容数量
     xiaohongshu_count = len([t for t in tweet_drafts if t.xiaohongshu_content])
+    
+    logger.info(f"推文生成节点执行完成，总计: {len(tweet_drafts)} 条，小红书: {xiaohongshu_count} 条")
     
     return TweetGeneratorOutput(
         tweet_drafts=tweet_drafts,
