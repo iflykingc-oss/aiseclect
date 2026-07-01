@@ -36,8 +36,8 @@ def feishu_notifier_node(
     webhook_url = ""
     
     try:
-        wechat_bot_credential = client_identity.get_integration_credential("integration-feishu-message")
-        webhook_key = json.loads(wechat_bot_credential).get("webhook_url", "")
+        feishu_msg_credential = client_identity.get_integration_credential("integration-feishu-message")
+        webhook_key = json.loads(feishu_msg_credential).get("webhook_url", "")
         webhook_url = webhook_key
     except Exception as e:
         logger.warning(f"飞书机器人凭证获取失败: {str(e)}")
@@ -73,18 +73,30 @@ def feishu_notifier_node(
             ]
         ]
         
-        # 如果有表格链接，添加可点击链接
-        if state.feishu_table_url:
+        # 如果有真实表格链接，添加可点击链接
+        if state.feishu_table_url and state.feishu_table_url.startswith("https://"):
             content_paragraphs.append([
                 {"tag": "text", "text": "🔗 "},
                 {"tag": "a", "text": "点击查看飞书表格", "href": state.feishu_table_url}
             ])
             message = f"通知发送成功，表格链接: {state.feishu_table_url}"
+        elif state.feishu_app_token and state.feishu_table_id:
+            # 如果有app_token和table_id，构建占位链接并提示用户
+            placeholder_url = f"https://feishu.cn/base/{state.feishu_app_token}?table={state.feishu_table_id}"
+            content_paragraphs.append([
+                {"tag": "text", "text": "⚠️ 飞书表格集成未授权，链接可能无法打开\n"}
+            ])
+            content_paragraphs.append([
+                {"tag": "text", "text": "🔗 "},
+                {"tag": "a", "text": "尝试查看表格（需授权）", "href": placeholder_url}
+            ])
+            message = f"通知发送成功（占位链接，飞书集成未授权）"
         else:
+            # 完全没有链接信息时，显示提示
             content_paragraphs.append([
                 {"tag": "text", "text": "💡 提示: 请在飞书表格中查看详情并完成审核"}
             ])
-            message = "通知发送成功（无表格链接）"
+            message = "通知发送成功（无表格链接信息）"
         
         payload = {
             "msg_type": "post",
