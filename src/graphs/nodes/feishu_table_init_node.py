@@ -1,232 +1,211 @@
 """
-飞书表格初始化节点
-自动创建飞书多维表格和数据表，以及所需的字段
+飞书表格初始化节点 - 自动创建飞书多维表格和所需字段
 """
 import json
 import logging
-import os
-from typing import Any, Dict, List, Optional
-
 import requests
-from cozeloop.decorator import observe
-from coze_workload_identity import Client
-from coze_coding_utils.runtime_ctx.context import Context
+from typing import List
 from langchain_core.runnables import RunnableConfig
 from langgraph.runtime import Runtime
-
+from coze_coding_utils.runtime_ctx.context import Context
+from cozeloop.decorator import observe
+from coze_workload_identity import Client
 from graphs.state import FeishuTableInitInput, FeishuTableInitOutput
 
-# 设置日志
 logger = logging.getLogger(__name__)
 
 
 class FeishuTableInitializer:
-    """飞书表格初始化器"""
+    """飞书多维表格初始化器"""
     
     def __init__(self):
-        self.base_url = "https://open.larkoffice.com/open-apis"
-        self.timeout = 30
-        self.access_token = ""
+        self.access_token: str = ""
     
     def get_access_token(self) -> str:
-        """获取飞书多维表格的租户访问令牌"""
+        """获取飞书多维表格的访问令牌"""
         try:
             client = Client()
-            access_token = client.get_integration_credential("integration-feishu-base")
-            return access_token if isinstance(access_token, str) else ""
+            self.access_token = client.get_integration_credential("integration-feishu-base")
+            return self.access_token
         except Exception as e:
-            logger.warning(f"飞书凭证获取失败: {str(e)}")
+            logger.warning(f"飞书凭证获取失败（集成未授权）: {str(e)}")
             return ""
     
     def _headers(self) -> dict:
         """构建请求头"""
-        headers: Dict[str, Any] = {
+        return {
+            "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json; charset=utf-8"
         }
-        if self.access_token:
-            headers["Authorization"] = f"Bearer {self.access_token}"
-        return headers
     
     @observe
-    def _request(self, method: str, path: str, json_body: Optional[dict] = None) -> Dict[str, Any]:
-        """发送飞书API请求"""
+    def get_wiki_node_info(self, token: str) -> dict:
+        """查询Wiki节点信息，获取嵌入的多维表格app_token"""
         try:
-            url = f"{self.base_url}{path}"
-            headers = self._headers()
+            # 飞书Wiki API：获取Wiki节点信息
+            resp = requests.get(
+                f"https://open.larkoffice.com/open-apis/wiki/v2/spaces/get_node?token={token}",
+                headers=self._headers(),
+                timeout=30
+            )
+            result = self._safe_json_parse(resp)
             
-            if method == "GET":
-                response = requests.get(url, headers=headers, timeout=self.timeout)
-            elif method == "POST":
-                response = requests.post(url, headers=headers, json=json_body, timeout=self.timeout)
+            if result.get("code") == 0:
+                node = result.get("data", {}).get("node", {})
+                # 检查是否是Bitable类型的节点
+                if node.get("obj_type") == "bitable":
+                    # Wiki内嵌表格的obj_token就是app_token
+                    app_token = node.get("obj_token", "")
+                    logger.info(f"从Wiki节点获取到表格app_token: {app_token}")
+                    return {"success": True, "app_token": app_token}
+                else:
+                    logger.warning(f"Wiki节点类型不是bitable: {node.get('obj_type')}")
+                    return {"success": False, "error": "节点类型不是多维表格"}
             else:
-                raise ValueError(f"不支持的HTTP方法: {method}")
-            
-            response.raise_for_status()
-            resp_data = response.json()
-            
-            if resp_data.get("code") != 0:
-                logger.error(f"飞书API错误: {resp_data}")
-                return {"success": False, "error": resp_data}
-            return {"success": True, "data": resp_data.get("data", {})}
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"飞书API HTTP错误: {e}")
-            return {"success": False, "error": str(e)}
-        except requests.exceptions.RequestException as e:
-            logger.error(f"飞书API请求异常: {e}")
-            return {"success": False, "error": str(e)}
+                logger.error(f"查询Wiki节点失败: {result.get('msg', '未知错误')}")
+                return {"success": False, "error": result.get("msg", "未知错误")}
         except Exception as e:
-            logger.error(f"飞书API未知异常: {e}")
+            logger.error(f"查询Wiki节点异常: {str(e)}")
             return {"success": False, "error": str(e)}
     
-    def create_base(self, name: str = "AI资讯采集") -> Dict[str, Any]:
-        """创建多维表格Base"""
-        body = {"name": name, "time_zone": "Asia/Shanghai"}
-        result = self._request("POST", "/bitable/v1/apps", json_body=body)
-        return result
-    
-    def create_table(self, app_token: str, table_name: str = "推文草稿") -> Dict[str, Any]:
-        """创建数据表"""
-        path = f"/bitable/v1/apps/{app_token}/tables"
-        body = {"table_name": table_name}
-        result = self._request("POST", path, json_body=body)
-        return result
-    
-    def list_fields(self, app_token: str, table_id: str) -> Dict[str, Any]:
-        """列出数据表字段"""
-        path = f"/bitable/v1/apps/{app_token}/tables/{table_id}/fields"
-        result = self._request("GET", path)
-        return result
-    
-    def add_field(self, app_token: str, table_id: str, field_name: str, field_type: int, 
-                  property: Optional[dict] = None, description: Optional[str] = None) -> Dict[str, Any]:
-        """添加字段"""
-        path = f"/bitable/v1/apps/{app_token}/tables/{table_id}/fields"
-        field_body: Dict[str, Any] = {
-            "field_name": field_name,
-            "type": field_type
-        }
-        if property:
-            field_body["property"] = property
-        if description:
-            field_body["description"] = description
+    def _safe_json_parse(self, resp) -> dict:
+        """安全的JSON解析，处理非JSON响应"""
+        # 先检查响应状态码
+        if resp.status_code != 200:
+            logger.error(f"飞书API HTTP错误: {resp.status_code}")
+            if resp.status_code == 401:
+                logger.error("飞书集成未授权（401），请在平台完成飞书多维表格集成授权")
+            return {"code": resp.status_code, "msg": f"HTTP {resp.status_code}: {resp.text[:200]}"}
         
-        result = self._request("POST", path, json_body=field_body)
-        return result
+        # 检查响应内容是否为JSON
+        content_type = resp.headers.get('Content-Type', '')
+        if 'application/json' not in content_type:
+            logger.error(f"飞书API返回非JSON响应: {content_type}")
+            return {"code": -1, "msg": f"非JSON响应: {content_type}, 内容: {resp.text[:200]}"}
+        
+        try:
+            return resp.json()
+        except json.JSONDecodeError as e:
+            logger.error(f"飞书API JSON解析错误: {str(e)}")
+            return {"code": -1, "msg": f"JSON解析错误: {str(e)}"}
+    
+    @observe
+    def create_base(self, name: str) -> dict:
+        """创建多维表格Base"""
+        try:
+            resp = requests.post(
+                "https://open.larkoffice.com/open-apis/bitable/v1/apps",
+                headers=self._headers(),
+                json={"name": name},
+                timeout=30
+            )
+            result = self._safe_json_parse(resp)
+            
+            if result.get("code") == 0:
+                return {"success": True, "data": result.get("data")}
+            else:
+                return {"success": False, "error": result.get("msg", "未知错误")}
+        except Exception as e:
+            logger.error(f"创建Base异常: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    @observe
+    def create_table(self, app_token: str, table_name: str) -> dict:
+        """创建数据表"""
+        try:
+            resp = requests.post(
+                f"https://open.larkoffice.com/open-apis/bitable/v1/apps/{app_token}/tables",
+                headers=self._headers(),
+                json={"table_name": table_name},
+                timeout=30
+            )
+            result = self._safe_json_parse(resp)
+            
+            if result.get("code") == 0:
+                return {"success": True, "data": result.get("data")}
+            else:
+                return {"success": False, "error": result.get("msg", "未知错误")}
+        except Exception as e:
+            logger.error(f"创建数据表异常: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    @observe
+    def list_fields(self, app_token: str, table_id: str) -> List[str]:
+        """获取数据表的现有字段"""
+        try:
+            resp = requests.get(
+                f"https://open.larkoffice.com/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/fields",
+                headers=self._headers(),
+                timeout=30
+            )
+            result = self._safe_json_parse(resp)
+            
+            if result.get("code") == 0:
+                items = result.get("data", {}).get("items", [])
+                return [item.get("field_name", "") for item in items if isinstance(item, dict)]
+            else:
+                logger.error(f"获取字段列表失败: {result.get('msg', '未知错误')}")
+                return []
+        except Exception as e:
+            logger.error(f"获取字段列表异常: {str(e)}")
+            return []
+    
+    @observe
+    def add_field(self, app_token: str, table_id: str, field_name: str, field_type: int) -> bool:
+        """添加字段到数据表"""
+        try:
+            resp = requests.post(
+                f"https://open.larkoffice.com/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/fields",
+                headers=self._headers(),
+                json={"field_name": field_name, "type": field_type},
+                timeout=30
+            )
+            result = self._safe_json_parse(resp)
+            
+            if result.get("code") == 0:
+                logger.info(f"字段 '{field_name}' 创建成功")
+                return True
+            else:
+                logger.error(f"字段 '{field_name}' 创建失败: {result.get('msg', '未知错误')}")
+                return False
+        except Exception as e:
+            logger.error(f"添加字段异常: {str(e)}")
+            return False
     
     def create_required_fields(self, app_token: str, table_id: str) -> List[str]:
-        """创建所需的字段"""
-        fields_created: List[str] = []
-        
-        # 定义所需字段
-        required_fields: List[Dict[str, Any]] = [
-            {
-                "field_name": "唯一ID",
-                "type": 1,  # 文本
-                "description": "推文唯一标识，用于去重"
-            },
-            {
-                "field_name": "链接",
-                "type": 1,  # 文本
-                "description": "原文URL"
-            },
-            {
-                "field_name": "标题",
-                "type": 1,  # 文本
-                "description": "资讯标题"
-            },
-            {
-                "field_name": "分类",
-                "type": 3,  # 单选
-                "property": {
-                    "options": [
-                        {"name": "AI技术"},
-                        {"name": "产品发布"},
-                        {"name": "行业动态"},
-                        {"name": "开源项目"},
-                        {"name": "学术研究"},
-                        {"name": "其他"}
-                    ]
-                },
-                "description": "内容分类"
-            },
-            {
-                "field_name": "热度评分",
-                "type": 2,  # 数字
-                "description": "AI评估的热度分数（0-100）"
-            },
-            {
-                "field_name": "推文内容",
-                "type": 1,  # 文本
-                "description": "生成的推文（280字符内）"
-            },
-            {
-                "field_name": "独立观点",
-                "type": 1,  # 文本
-                "description": "推文中的观点提炼"
-            },
-            {
-                "field_name": "处理状态",
-                "type": 3,  # 单选
-                "property": {
-                    "options": [
-                        {"name": "待审核"},
-                        {"name": "待发布"},
-                        {"name": "已发布"},
-                        {"name": "已归档"}
-                    ]
-                },
-                "description": "审核流程状态"
-            },
-            {
-                "field_name": "创建时间",
-                "type": 5,  # 日期
-                "description": "记录创建时间"
-            }
+        """创建所需的字段（如果不存在）"""
+        # 标准字段定义（名称和类型）
+        required_fields = [
+            ("唯一ID", 1),      # 文本
+            ("链接", 1),         # 文本
+            ("标题", 1),         # 文本
+            ("分类", 3),         # 单选
+            ("热度评分", 2),     # 数字
+            ("推文内容", 1),     # 文本
+            ("独立观点", 1),     # 文本
+            ("处理状态", 3),     # 单选
+            ("创建时间", 5),     # 日期
         ]
         
-        # 先获取现有字段列表
-        existing_fields_result = self.list_fields(app_token=app_token, table_id=table_id)
-        existing_field_names: List[str] = []
+        # 获取现有字段
+        existing_fields = self.list_fields(app_token=app_token, table_id=table_id)
+        logger.info(f"现有字段: {existing_fields}")
         
-        if existing_fields_result.get("success"):
-            fields_data = existing_fields_result.get("data", {})
-            items = fields_data.get("items", [])
-            if isinstance(items, list):
-                existing_field_names = [f.get("field_name", "") for f in items if isinstance(f, dict)]
+        # 创建缺失字段
+        created_fields: List[str] = []
+        for field_name, field_type in required_fields:
+            if field_name not in existing_fields:
+                if self.add_field(app_token=app_token, table_id=table_id, field_name=field_name, field_type=field_type):
+                    created_fields.append(field_name)
         
-        # 添加缺失字段
-        for field_def in required_fields:
-            field_name = field_def.get("field_name", "")
-            if field_name not in existing_field_names:
-                result = self.add_field(
-                    app_token=app_token,
-                    table_id=table_id,
-                    field_name=field_name,
-                    field_type=field_def.get("type", 1),
-                    property=field_def.get("property"),
-                    description=field_def.get("description")
-                )
-                
-                if result.get("success"):
-                    fields_created.append(field_name)
-                    logger.info(f"字段 '{field_name}' 创建成功")
-                else:
-                    logger.warning(f"字段 '{field_name}' 创建失败: {result.get('error')}")
-        
-        return fields_created
+        return created_fields
 
 
 def feishu_table_init_node(state: FeishuTableInitInput, config: RunnableConfig, runtime: Runtime[Context]) -> FeishuTableInitOutput:
     """
     title: 飞书表格初始化
-    desc: 自动创建飞书多维表格和数据表，以及所需的字段（唯一ID、链接、标题、分类、热度评分、推文内容、独立观点、处理状态、创建时间）。支持独立多维表格和Wiki内嵌表格。
-    integrations: 飞书多维表格
-    
-    功能：
-    1. 独立多维表格：如果没有提供app_token，自动创建新的Base；如果没有table_id，创建新的数据表
-    2. Wiki内嵌表格：跳过表格创建步骤，直接使用提供的table_id创建字段
-    3. 检查字段是否存在，自动补充缺失字段
-    4. 返回表格信息给后续节点使用
+    desc: 自动创建飞书多维表格和数据表，并添加所需的字段
+    integrations: Feishu Base
     """
     ctx = runtime.context
     
@@ -269,15 +248,23 @@ def feishu_table_init_node(state: FeishuTableInitInput, config: RunnableConfig, 
                 message = "Wiki内嵌表格缺少table_id，请在Wiki页面中打开表格并获取完整链接"
                 logger.error(message)
             else:
-                # Wiki内嵌表格需要app_token来操作字段，尝试从Wiki页面获取
-                # 注意：Wiki内嵌表格的app_token可能需要特殊处理
+                # Wiki内嵌表格需要app_token来操作字段
                 if not app_token:
-                    logger.warning("Wiki内嵌表格缺少app_token，尝试使用page_id作为app_token")
-                    # 临时方案：有些Wiki内嵌表格的app_token等同于页面空间token
-                    # 这里我们假设用户会提供正确的app_token
-                    message = "Wiki内嵌表格需要提供app_token才能创建字段"
-                    init_success = False
-                else:
+                    logger.info("Wiki内嵌表格缺少app_token，尝试从Wiki页面获取...")
+                    # 使用page_id（Wiki节点token）查询Wiki页面信息
+                    wiki_result = initializer.get_wiki_node_info(token=page_id)
+                    
+                    if wiki_result.get("success"):
+                        app_token = wiki_result.get("app_token", "")
+                        logger.info(f"成功从Wiki页面获取app_token: {app_token}")
+                        message += f"，自动获取app_token: {app_token}"
+                    else:
+                        init_success = False
+                        message = f"无法从Wiki页面获取app_token: {wiki_result.get('error')}"
+                        logger.error(message)
+                
+                # 创建字段（已获取app_token）
+                if init_success and app_token:
                     logger.info(f"开始为Wiki内嵌表格创建字段，app_token: {app_token}, table_id: {table_id}")
                     fields_created = initializer.create_required_fields(app_token=app_token, table_id=table_id)
                     
@@ -327,9 +314,9 @@ def feishu_table_init_node(state: FeishuTableInitInput, config: RunnableConfig, 
                     init_success = False
                     message = f"创建数据表失败: {result.get('error')}"
             
-            # 步骤3：创建所需字段
+            # 步骤3：创建所需的字段
             if init_success and app_token and table_id:
-                logger.info("检查并创建所需字段...")
+                logger.info(f"开始创建字段，app_token: {app_token}, table_id: {table_id}")
                 fields_created = initializer.create_required_fields(app_token=app_token, table_id=table_id)
                 
                 if len(fields_created) > 0:
@@ -338,13 +325,11 @@ def feishu_table_init_node(state: FeishuTableInitInput, config: RunnableConfig, 
                 else:
                     logger.info("所有字段已存在，无需创建")
                     message += "，字段已就绪"
-        
-    except Exception as e:
-        logger.error(f"飞书表格初始化异常: {e}")
-        init_success = False
-        message = f"初始化异常: {str(e)}"
     
-    logger.info(f"飞书表格初始化完成: {message}")
+    except Exception as e:
+        logger.error(f"飞书表格初始化异常: {str(e)}")
+        init_success = False
+        message = f"飞书表格初始化异常: {str(e)}"
     
     return FeishuTableInitOutput(
         app_token=app_token,
