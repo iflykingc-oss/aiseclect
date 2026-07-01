@@ -42,14 +42,17 @@ class ScoredMaterial(BaseModel):
 
 
 class TweetDraft(BaseModel):
-    """推文草稿"""
+    """推文草稿（双平台支持）"""
     unique_id: str = Field(..., description="唯一ID")
     url: str = Field(..., description="素材链接URL")
     title: str = Field(default="", description="素材标题")
     category: str = Field(default="未分类", description="资讯分类")
     heat_score: float = Field(default=0.0, description="热度评分")
-    tweet_content: str = Field(..., description="推文内容（280字符内）")
+    tweet_content: str = Field(..., description="X平台推文内容（280字符内）")
     viewpoint: str = Field(default="", description="独立观点")
+    xiaohongshu_title: str = Field(default="", description="小红书标题（简短吸引人的标题）")
+    xiaohongshu_content: str = Field(default="", description="小红书短内容（200-300字，包含emoji、话题标签）")
+    xiaohongshu_tags: List[str] = Field(default=[], description="小红书话题标签（#标签列表）")
     status: str = Field(default="待审核", description="处理状态（待审核/待发布/已发布）")
 
 
@@ -235,9 +238,10 @@ class TweetGeneratorInput(BaseModel):
 
 
 class TweetGeneratorOutput(BaseModel):
-    """推文生成节点输出"""
+    """推文生成节点输出（双平台支持）"""
     tweet_drafts: List[TweetDraft] = Field(default=[], description="生成的推文草稿")
     total_count: int = Field(default=0, description="推文总数")
+    xiaohongshu_count: int = Field(default=0, description="小红书内容数量")
 
 
 # 7. 飞书表格初始化节点

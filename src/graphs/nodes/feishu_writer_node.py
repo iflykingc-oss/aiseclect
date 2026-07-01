@@ -136,7 +136,7 @@ def feishu_writer_node(state: FeishuWriterInput, config: RunnableConfig, runtime
         # 2. 批量新增记录（使用with_shared_url获取记录链接）
         add_url = f"{base_url}/bitable/v1/apps/{app_token}/tables/{state.feishu_table_id}/records/batch_create"
         
-        # 构建记录列表
+        # 构建记录列表（包含双平台内容）
         records = []
         for draft in state.tweet_drafts:
             record = {
@@ -146,8 +146,11 @@ def feishu_writer_node(state: FeishuWriterInput, config: RunnableConfig, runtime
                     "标题": draft.title,
                     "分类": draft.category,
                     "热度评分": draft.heat_score,
-                    "推文内容": draft.tweet_content,
+                    "推文内容": draft.tweet_content,  # X平台内容
                     "独立观点": draft.viewpoint,
+                    "小红书标题": draft.xiaohongshu_title,  # 小红书标题
+                    "小红书内容": draft.xiaohongshu_content,  # 小红书内容
+                    "小红书标签": ", ".join(draft.xiaohongshu_tags) if draft.xiaohongshu_tags else "",  # 小红书标签（逗号分隔）
                     "处理状态": draft.status
                 }
             }

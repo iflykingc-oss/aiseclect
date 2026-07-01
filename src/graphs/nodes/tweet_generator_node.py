@@ -127,14 +127,22 @@ def tweet_generator_node(
                 heat_score=float(tweet_data.get("heat_score", 0)),
                 tweet_content=tweet_data.get("tweet_content", ""),
                 viewpoint=tweet_data.get("viewpoint", ""),
+                xiaohongshu_title=tweet_data.get("xiaohongshu_title", ""),
+                xiaohongshu_content=tweet_data.get("xiaohongshu_content", ""),
+                xiaohongshu_tags=tweet_data.get("xiaohongshu_tags", []),
                 status="待审核"
             )
             
-            # 验证字符数（280字符限制）
+            # 验证字符数（X平台280字符限制）
             content_length = len(tweet_draft.tweet_content)
             if content_length > 280:
                 # 截断并添加省略号
                 tweet_draft.tweet_content = tweet_draft.tweet_content[:277] + "..."
+            
+            # 验证小红书内容长度（200-300字）
+            xiaohongshu_length = len(tweet_draft.xiaohongshu_content)
+            if xiaohongshu_length > 300:
+                tweet_draft.xiaohongshu_content = tweet_draft.xiaohongshu_content[:297] + "..."
             
             tweet_drafts.append(tweet_draft)
     
@@ -159,11 +167,18 @@ def tweet_generator_node(
                 heat_score=mat.heat_score,
                 tweet_content=simple_tweet,
                 viewpoint="自动生成（解析失败）",
+                xiaohongshu_title=f"AI资讯：{mat.title[:50]}",
+                xiaohongshu_content=f"💡 {mat.title}\n\n{mat.snippet}\n\n#AI #人工智能 #科技资讯",
+                xiaohongshu_tags=["AI", "人工智能", "科技资讯"],
                 status="待审核"
             )
             tweet_drafts.append(tweet_draft)
     
+    # 统计小红书内容数量
+    xiaohongshu_count = len([t for t in tweet_drafts if t.xiaohongshu_content])
+    
     return TweetGeneratorOutput(
         tweet_drafts=tweet_drafts,
-        total_count=len(tweet_drafts)
+        total_count=len(tweet_drafts),
+        xiaohongshu_count=xiaohongshu_count
     )
