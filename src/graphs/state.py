@@ -252,6 +252,8 @@ class FeishuNotifierInput(BaseModel):
     new_material_count: int = Field(default=0, description="新增素材数量")
     tweet_count: int = Field(default=0, description="生成推文数量")
     added_record_ids: List[str] = Field(default=[], description="新增记录ID")
+    feishu_app_token: str = Field(..., description="飞书多维表格App Token（用于生成表格链接）")
+    feishu_table_id: str = Field(..., description="飞书数据表ID（用于生成表格链接）")
 
 
 class FeishuNotifierOutput(BaseModel):
