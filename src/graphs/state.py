@@ -58,8 +58,11 @@ class TweetDraft(BaseModel):
 class GlobalState(BaseModel):
     """全局状态定义"""
     # 飞书表格信息
-    feishu_app_token: str = Field(default="", description="飞书多维表格App Token")
+    feishu_app_token: str = Field(default="", description="飞书多维表格App Token（独立表格）")
     feishu_table_id: str = Field(default="", description="飞书数据表ID")
+    feishu_page_id: str = Field(default="", description="飞书Wiki页面ID（Wiki内嵌表格）")
+    is_wiki_embed: bool = Field(default=False, description="是否为Wiki内嵌表格")
+    feishu_domain: str = Field(default="my.feishu.cn", description="飞书企业域名")
     feishu_table_url: str = Field(default="", description="飞书表格共享链接（用于通知）")
     fields_created: List[str] = Field(default=[], description="飞书表格新创建的字段列表")
     init_success: bool = Field(default=False, description="飞书表格初始化是否成功")
@@ -96,8 +99,11 @@ class GlobalState(BaseModel):
 
 class GraphInput(BaseModel):
     """工作流输入"""
-    feishu_app_token: str = Field(..., description="飞书多维表格App Token")
+    feishu_app_token: Optional[str] = Field(default=None, description="飞书多维表格App Token（独立表格）")
     feishu_table_id: str = Field(..., description="飞书数据表ID")
+    feishu_page_id: Optional[str] = Field(default=None, description="飞书Wiki页面ID（Wiki内嵌表格）")
+    is_wiki_embed: bool = Field(default=False, description="是否为Wiki内嵌表格")
+    feishu_domain: str = Field(default="my.feishu.cn", description="飞书企业域名")
 
 
 class GraphOutput(BaseModel):
@@ -185,8 +191,8 @@ class MaterialMergeOutput(BaseModel):
 class DedupFilterInput(BaseModel):
     """去重过滤节点输入"""
     merged_materials: List[StandardMaterial] = Field(default=[], description="合并后的素材")
-    feishu_app_token: str = Field(..., description="飞书多维表格App Token")
-    feishu_table_id: str = Field(..., description="飞书数据表ID")
+    feishu_app_token: str = Field(default="", description="飞书多维表格App Token（可选）")
+    feishu_table_id: str = Field(default="", description="飞书数据表ID（可选）")
 
 
 class DedupFilterOutput(BaseModel):
@@ -240,12 +246,18 @@ class FeishuTableInitInput(BaseModel):
     """飞书表格初始化节点输入"""
     feishu_app_token: str = Field(default="", description="飞书表格app_token（可选，未提供则自动创建）")
     feishu_table_id: str = Field(default="", description="飞书数据表ID（可选，未提供则自动创建）")
+    feishu_page_id: str = Field(default="", description="飞书Wiki页面ID（Wiki内嵌表格）")
+    is_wiki_embed: bool = Field(default=False, description="是否为Wiki内嵌表格")
+    feishu_domain: str = Field(default="my.feishu.cn", description="飞书企业域名")
 
 
 class FeishuTableInitOutput(BaseModel):
     """飞书表格初始化节点输出"""
     app_token: str = Field(default="", description="飞书表格app_token（初始化后的实际值）")
     table_id: str = Field(default="", description="飞书数据表ID（初始化后的实际值）")
+    page_id: str = Field(default="", description="飞书Wiki页面ID")
+    is_wiki_embed: bool = Field(default=False, description="是否为Wiki内嵌表格")
+    feishu_domain: str = Field(default="my.feishu.cn", description="飞书企业域名")
     fields_created: List[str] = Field(default=[], description="新创建的字段名称列表")
     init_success: bool = Field(default=False, description="初始化是否成功")
     message: str = Field(default="", description="初始化结果消息")
@@ -256,14 +268,18 @@ class FeishuTableInitOutput(BaseModel):
 class FeishuWriterInput(BaseModel):
     """飞书表格写入节点输入"""
     tweet_drafts: List[TweetDraft] = Field(default=[], description="待写入的推文草稿")
-    feishu_app_token: str = Field(..., description="飞书多维表格App Token")
-    feishu_table_id: str = Field(..., description="飞书数据表ID")
+    feishu_app_token: str = Field(default="", description="飞书多维表格App Token（可选）")
+    feishu_table_id: str = Field(default="", description="飞书数据表ID（可选）")
+    feishu_page_id: str = Field(default="", description="飞书Wiki页面ID（可选）")
+    is_wiki_embed: bool = Field(default=False, description="是否为Wiki内嵌表格")
+    feishu_domain: str = Field(default="my.feishu.cn", description="飞书企业域名")
 
 
 class FeishuWriterOutput(BaseModel):
     """飞书表格写入节点输出"""
     added_record_ids: List[str] = Field(default=[], description="新增记录ID列表")
     added_count: int = Field(default=0, description="新增记录数量")
+    feishu_table_url: str = Field(default="", description="飞书表格共享链接（如果有）")
     feishu_table_url: str = Field(default="", description="飞书表格共享链接")
 
 
@@ -275,8 +291,11 @@ class FeishuNotifierInput(BaseModel):
     tweet_count: int = Field(default=0, description="生成推文数量")
     added_record_ids: List[str] = Field(default=[], description="新增记录ID")
     feishu_table_url: str = Field(default="", description="飞书表格共享链接（从写入节点获取）")
-    feishu_app_token: str = Field(default="", description="飞书表格app_token（用于构建占位链接）")
-    feishu_table_id: str = Field(default="", description="飞书表格table_id（用于构建占位链接）")
+    feishu_app_token: str = Field(default="", description="飞书表格app_token（独立表格）")
+    feishu_table_id: str = Field(default="", description="飞书表格table_id")
+    feishu_page_id: str = Field(default="", description="飞书Wiki页面ID（Wiki内嵌表格）")
+    is_wiki_embed: bool = Field(default=False, description="是否为Wiki内嵌表格")
+    feishu_domain: str = Field(default="my.feishu.cn", description="飞书企业域名")
 
 
 class FeishuNotifierOutput(BaseModel):

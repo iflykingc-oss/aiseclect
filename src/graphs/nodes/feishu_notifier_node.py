@@ -80,15 +80,23 @@ def feishu_notifier_node(
                 {"tag": "a", "text": "点击查看飞书表格", "href": state.feishu_table_url}
             ])
             message = f"通知发送成功，表格链接: {state.feishu_table_url}"
+        elif state.feishu_page_id and state.feishu_table_id:
+            # Wiki内嵌表格链接
+            wiki_url = f"https://{state.feishu_domain}/wiki/{state.feishu_page_id}?table={state.feishu_table_id}"
+            content_paragraphs.append([
+                {"tag": "text", "text": "🔗 "},
+                {"tag": "a", "text": "点击查看Wiki表格", "href": wiki_url}
+            ])
+            message = f"通知发送成功，Wiki表格链接: {wiki_url}"
         elif state.feishu_app_token and state.feishu_table_id:
-            # 如果有app_token和table_id，构建占位链接并提示用户
-            placeholder_url = f"https://feishu.cn/base/{state.feishu_app_token}?table={state.feishu_table_id}"
+            # 独立多维表格占位链接
+            base_url = f"https://{state.feishu_domain}/base/{state.feishu_app_token}?table={state.feishu_table_id}"
             content_paragraphs.append([
                 {"tag": "text", "text": "⚠️ 飞书表格集成未授权，链接可能无法打开\n"}
             ])
             content_paragraphs.append([
                 {"tag": "text", "text": "🔗 "},
-                {"tag": "a", "text": "尝试查看表格（需授权）", "href": placeholder_url}
+                {"tag": "a", "text": "尝试查看表格（需授权）", "href": base_url}
             ])
             message = f"通知发送成功（占位链接，飞书集成未授权）"
         else:

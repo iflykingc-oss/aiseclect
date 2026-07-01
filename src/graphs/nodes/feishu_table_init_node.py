@@ -1,60 +1,69 @@
 """
 飞书表格初始化节点
-自动创建飞书多维表格和数据表，以及所需的所有字段
+自动创建飞书多维表格和数据表，以及所需的字段
 """
-
 import json
 import logging
 import os
-import requests
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
-from langchain_core.runnables import RunnableConfig
-from langgraph.runtime import Runtime
-from coze_coding_utils.runtime_ctx.context import Context
+import requests
 from cozeloop.decorator import observe
 from coze_workload_identity import Client
+from coze_coding_utils.runtime_ctx.context import Context
+from langchain_core.runnables import RunnableConfig
+from langgraph.runtime import Runtime
 
 from graphs.state import FeishuTableInitInput, FeishuTableInitOutput
 
+# 设置日志
 logger = logging.getLogger(__name__)
 
 
 class FeishuTableInitializer:
-    """飞书多维表格初始化器"""
+    """飞书表格初始化器"""
     
-    def __init__(self, timeout: int = 30):
-        self.timeout = timeout
-        self.access_token: Optional[str] = None
-        self.base_url = "https://open.feishu.cn/open-apis"
-        
+    def __init__(self):
+        self.base_url = "https://open.larkoffice.com/open-apis"
+        self.timeout = 30
+        self.access_token = ""
+    
     def get_access_token(self) -> str:
         """获取飞书多维表格的租户访问令牌"""
         try:
             client = Client()
-            credential = client.get_integration_credential("integration-feishu-base")
-            return credential
+            access_token = client.get_integration_credential("integration-feishu-base")
+            return access_token if isinstance(access_token, str) else ""
         except Exception as e:
-            logger.error(f"获取飞书凭证失败: {e}")
+            logger.warning(f"飞书凭证获取失败: {str(e)}")
             return ""
     
     def _headers(self) -> dict:
         """构建请求头"""
-        token = self.access_token or ""
-        return {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json; charset=utf-8",
+        headers: Dict[str, Any] = {
+            "Content-Type": "application/json; charset=utf-8"
         }
+        if self.access_token:
+            headers["Authorization"] = f"Bearer {self.access_token}"
+        return headers
     
     @observe
-    def _request(self, method: str, path: str, params: Optional[dict] = None, json_body: Optional[dict] = None) -> dict:
+    def _request(self, method: str, path: str, json_body: Optional[dict] = None) -> Dict[str, Any]:
         """发送飞书API请求"""
         try:
             url = f"{self.base_url}{path}"
             headers = self._headers()
-            resp = requests.request(method, url, headers=headers, params=params, json=json_body, timeout=self.timeout)
-            resp.raise_for_status()
-            resp_data = resp.json()
+            
+            if method == "GET":
+                response = requests.get(url, headers=headers, timeout=self.timeout)
+            elif method == "POST":
+                response = requests.post(url, headers=headers, json=json_body, timeout=self.timeout)
+            else:
+                raise ValueError(f"不支持的HTTP方法: {method}")
+            
+            response.raise_for_status()
+            resp_data = response.json()
+            
             if resp_data.get("code") != 0:
                 logger.error(f"飞书API错误: {resp_data}")
                 return {"success": False, "error": resp_data}
@@ -143,7 +152,7 @@ class FeishuTableInitializer:
             {
                 "field_name": "热度评分",
                 "type": 2,  # 数字
-                "description": "AI评分（0-100）"
+                "description": "AI评估的热度分数（0-100）"
             },
             {
                 "field_name": "推文内容",
@@ -166,7 +175,7 @@ class FeishuTableInitializer:
                         {"name": "已归档"}
                     ]
                 },
-                "description": "审核状态"
+                "description": "审核流程状态"
             },
             {
                 "field_name": "创建时间",
@@ -175,8 +184,8 @@ class FeishuTableInitializer:
             }
         ]
         
-        # 先检查已有字段
-        existing_fields_result = self.list_fields(app_token, table_id)
+        # 先获取现有字段列表
+        existing_fields_result = self.list_fields(app_token=app_token, table_id=table_id)
         existing_field_names: List[str] = []
         
         if existing_fields_result.get("success"):
@@ -210,12 +219,12 @@ class FeishuTableInitializer:
 def feishu_table_init_node(state: FeishuTableInitInput, config: RunnableConfig, runtime: Runtime[Context]) -> FeishuTableInitOutput:
     """
     title: 飞书表格初始化
-    desc: 自动创建飞书多维表格和数据表，以及所需的字段（唯一ID、链接、标题、分类、热度评分、推文内容、独立观点、处理状态、创建时间）
+    desc: 自动创建飞书多维表格和数据表，以及所需的字段（唯一ID、链接、标题、分类、热度评分、推文内容、独立观点、处理状态、创建时间）。支持独立多维表格和Wiki内嵌表格。
     integrations: 飞书多维表格
     
     功能：
-    1. 如果没有提供app_token，自动创建新的多维表格Base
-    2. 如果没有提供table_id，自动创建新的数据表
+    1. 独立多维表格：如果没有提供app_token，自动创建新的Base；如果没有table_id，创建新的数据表
+    2. Wiki内嵌表格：跳过表格创建步骤，直接使用提供的table_id创建字段
     3. 检查字段是否存在，自动补充缺失字段
     4. 返回表格信息给后续节点使用
     """
@@ -232,6 +241,9 @@ def feishu_table_init_node(state: FeishuTableInitInput, config: RunnableConfig, 
         return FeishuTableInitOutput(
             app_token=state.feishu_app_token or "",
             table_id=state.feishu_table_id or "",
+            page_id=state.feishu_page_id or "",
+            is_wiki_embed=state.is_wiki_embed,
+            feishu_domain=state.feishu_domain,
             fields_created=[],
             init_success=False,
             message="飞书多维表格集成未授权，请先在平台完成授权"
@@ -240,58 +252,92 @@ def feishu_table_init_node(state: FeishuTableInitInput, config: RunnableConfig, 
     # 初始化结果
     app_token: str = state.feishu_app_token or ""
     table_id: str = state.feishu_table_id or ""
+    page_id: str = state.feishu_page_id or ""
+    is_wiki_embed: bool = state.is_wiki_embed
+    feishu_domain: str = state.feishu_domain
     fields_created: List[str] = []
     init_success: bool = True
     message: str = "飞书表格初始化成功"
     
     try:
-        # 步骤1：如果没有app_token，创建新的Base
-        if not app_token:
-            logger.info("创建新的多维表格Base...")
-            result = initializer.create_base(name="AI资讯采集推文库")
+        # Wiki内嵌表格处理（跳过表格创建步骤）
+        if is_wiki_embed:
+            logger.info(f"检测到Wiki内嵌表格模式，page_id: {page_id}, table_id: {table_id}")
             
-            if result.get("success"):
-                data = result.get("data", {})
-                app_token = data.get("app", {}).get("app_token", "")
-                if isinstance(app_token, str) and app_token:
-                    logger.info(f"Base创建成功，app_token: {app_token}")
-                    message += f"，创建新表格: {app_token}"
+            if not table_id:
+                init_success = False
+                message = "Wiki内嵌表格缺少table_id，请在Wiki页面中打开表格并获取完整链接"
+                logger.error(message)
+            else:
+                # Wiki内嵌表格需要app_token来操作字段，尝试从Wiki页面获取
+                # 注意：Wiki内嵌表格的app_token可能需要特殊处理
+                if not app_token:
+                    logger.warning("Wiki内嵌表格缺少app_token，尝试使用page_id作为app_token")
+                    # 临时方案：有些Wiki内嵌表格的app_token等同于页面空间token
+                    # 这里我们假设用户会提供正确的app_token
+                    message = "Wiki内嵌表格需要提供app_token才能创建字段"
+                    init_success = False
+                else:
+                    logger.info(f"开始为Wiki内嵌表格创建字段，app_token: {app_token}, table_id: {table_id}")
+                    fields_created = initializer.create_required_fields(app_token=app_token, table_id=table_id)
+                    
+                    if len(fields_created) > 0:
+                        logger.info(f"成功创建 {len(fields_created)} 个字段: {fields_created}")
+                        message += f"，创建 {len(fields_created)} 个字段"
+                    else:
+                        logger.info("所有字段已存在，无需创建")
+                        message += "，字段已就绪"
+        else:
+            # 独立多维表格处理（正常流程）
+            logger.info("检测到独立多维表格模式")
+            
+            # 步骤1：如果没有app_token，创建新的Base
+            if not app_token:
+                logger.info("创建新的多维表格Base...")
+                result = initializer.create_base(name="AI资讯采集推文库")
+                
+                if result.get("success"):
+                    data = result.get("data", {})
+                    app_token = data.get("app", {}).get("app_token", "")
+                    if isinstance(app_token, str) and app_token:
+                        logger.info(f"Base创建成功，app_token: {app_token}")
+                        message += f"，创建新表格: {app_token}"
+                    else:
+                        init_success = False
+                        message = "创建Base失败：无法获取app_token"
                 else:
                     init_success = False
-                    message = "创建Base失败：无法获取app_token"
-            else:
-                init_success = False
-                message = f"创建Base失败: {result.get('error')}"
-        
-        # 步骤2：如果没有table_id，创建新的数据表
-        if init_success and app_token and not table_id:
-            logger.info("创建新的数据表...")
-            result = initializer.create_table(app_token=app_token, table_name="推文草稿")
+                    message = f"创建Base失败: {result.get('error')}"
             
-            if result.get("success"):
-                data = result.get("data", {})
-                table_id = data.get("table_id", "")
-                if isinstance(table_id, str) and table_id:
-                    logger.info(f"数据表创建成功，table_id: {table_id}")
-                    message += f"，创建新数据表: {table_id}"
+            # 步骤2：如果没有table_id，创建新的数据表
+            if init_success and app_token and not table_id:
+                logger.info("创建新的数据表...")
+                result = initializer.create_table(app_token=app_token, table_name="推文草稿")
+                
+                if result.get("success"):
+                    data = result.get("data", {})
+                    table_id = data.get("table_id", "")
+                    if isinstance(table_id, str) and table_id:
+                        logger.info(f"数据表创建成功，table_id: {table_id}")
+                        message += f"，创建新数据表: {table_id}"
+                    else:
+                        init_success = False
+                        message = "创建数据表失败：无法获取table_id"
                 else:
                     init_success = False
-                    message = "创建数据表失败：无法获取table_id"
-            else:
-                init_success = False
-                message = f"创建数据表失败: {result.get('error')}"
-        
-        # 步骤3：创建所需字段
-        if init_success and app_token and table_id:
-            logger.info("检查并创建所需字段...")
-            fields_created = initializer.create_required_fields(app_token=app_token, table_id=table_id)
+                    message = f"创建数据表失败: {result.get('error')}"
             
-            if len(fields_created) > 0:
-                logger.info(f"成功创建 {len(fields_created)} 个字段: {fields_created}")
-                message += f"，创建 {len(fields_created)} 个字段"
-            else:
-                logger.info("所有字段已存在，无需创建")
-                message += "，字段已就绪"
+            # 步骤3：创建所需字段
+            if init_success and app_token and table_id:
+                logger.info("检查并创建所需字段...")
+                fields_created = initializer.create_required_fields(app_token=app_token, table_id=table_id)
+                
+                if len(fields_created) > 0:
+                    logger.info(f"成功创建 {len(fields_created)} 个字段: {fields_created}")
+                    message += f"，创建 {len(fields_created)} 个字段"
+                else:
+                    logger.info("所有字段已存在，无需创建")
+                    message += "，字段已就绪"
         
     except Exception as e:
         logger.error(f"飞书表格初始化异常: {e}")
@@ -303,6 +349,9 @@ def feishu_table_init_node(state: FeishuTableInitInput, config: RunnableConfig, 
     return FeishuTableInitOutput(
         app_token=app_token,
         table_id=table_id,
+        page_id=page_id,
+        is_wiki_embed=is_wiki_embed,
+        feishu_domain=feishu_domain,
         fields_created=fields_created,
         init_success=init_success,
         message=message
