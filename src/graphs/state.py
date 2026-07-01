@@ -61,6 +61,9 @@ class GlobalState(BaseModel):
     feishu_app_token: str = Field(default="", description="飞书多维表格App Token")
     feishu_table_id: str = Field(default="", description="飞书数据表ID")
     feishu_table_url: str = Field(default="", description="飞书表格共享链接（用于通知）")
+    fields_created: List[str] = Field(default=[], description="飞书表格新创建的字段列表")
+    init_success: bool = Field(default=False, description="飞书表格初始化是否成功")
+    init_message: str = Field(default="", description="飞书表格初始化消息")
     
     # 采集结果
     aihot_materials: List[RawMaterial] = Field(default=[], description="AIHOT雷达采集素材")
@@ -117,7 +120,7 @@ class AIHotCollectorInput(BaseModel):
 
 class AIHotCollectorOutput(BaseModel):
     """AIHOT雷达采集节点输出"""
-    materials: List[RawMaterial] = Field(default=[], description="采集的素材列表")
+    aihot_materials: List[RawMaterial] = Field(default=[], description="采集的素材列表")
 
 
 class AINewsCollectorInput(BaseModel):
@@ -127,7 +130,7 @@ class AINewsCollectorInput(BaseModel):
 
 class AINewsCollectorOutput(BaseModel):
     """AI-News雷达采集节点输出"""
-    materials: List[RawMaterial] = Field(default=[], description="采集的素材列表")
+    ainews_materials: List[RawMaterial] = Field(default=[], description="采集的素材列表")
 
 
 class RSSCollectorInput(BaseModel):
@@ -137,7 +140,7 @@ class RSSCollectorInput(BaseModel):
 
 class RSSCollectorOutput(BaseModel):
     """RSS采集节点输出"""
-    materials: List[RawMaterial] = Field(default=[], description="采集的素材列表")
+    rss_materials: List[RawMaterial] = Field(default=[], description="采集的素材列表")
 
 
 class TavilyCollectorInput(BaseModel):
@@ -147,7 +150,7 @@ class TavilyCollectorInput(BaseModel):
 
 class TavilyCollectorOutput(BaseModel):
     """Tavily搜索采集节点输出"""
-    materials: List[RawMaterial] = Field(default=[], description="采集的素材列表")
+    tavily_materials: List[RawMaterial] = Field(default=[], description="采集的素材列表")
 
 
 class GitHubCollectorInput(BaseModel):
@@ -157,7 +160,7 @@ class GitHubCollectorInput(BaseModel):
 
 class GitHubCollectorOutput(BaseModel):
     """GitHub Trending采集节点输出"""
-    materials: List[RawMaterial] = Field(default=[], description="采集的素材列表")
+    github_materials: List[RawMaterial] = Field(default=[], description="采集的素材列表")
 
 
 # 2. 素材合并节点
@@ -231,7 +234,24 @@ class TweetGeneratorOutput(BaseModel):
     total_count: int = Field(default=0, description="推文总数")
 
 
-# 7. 飞书表格写入节点
+# 7. 飞书表格初始化节点
+
+class FeishuTableInitInput(BaseModel):
+    """飞书表格初始化节点输入"""
+    feishu_app_token: str = Field(default="", description="飞书表格app_token（可选，未提供则自动创建）")
+    feishu_table_id: str = Field(default="", description="飞书数据表ID（可选，未提供则自动创建）")
+
+
+class FeishuTableInitOutput(BaseModel):
+    """飞书表格初始化节点输出"""
+    app_token: str = Field(default="", description="飞书表格app_token（初始化后的实际值）")
+    table_id: str = Field(default="", description="飞书数据表ID（初始化后的实际值）")
+    fields_created: List[str] = Field(default=[], description="新创建的字段名称列表")
+    init_success: bool = Field(default=False, description="初始化是否成功")
+    message: str = Field(default="", description="初始化结果消息")
+
+
+# 8. 飞书表格写入节点
 
 class FeishuWriterInput(BaseModel):
     """飞书表格写入节点输入"""

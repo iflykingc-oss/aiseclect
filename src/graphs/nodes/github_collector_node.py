@@ -54,4 +54,4 @@ def github_collector_node(
             )
             materials.append(material)
     
-    return GitHubCollectorOutput(materials=materials)
+    return GitHubCollectorOutput(github_materials=materials)

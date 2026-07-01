@@ -54,4 +54,4 @@ def rss_collector_node(
             )
             materials.append(material)
     
-    return RSSCollectorOutput(materials=materials)
+    return RSSCollectorOutput(rss_materials=materials)

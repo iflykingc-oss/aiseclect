@@ -55,4 +55,4 @@ def aihot_collector_node(
             )
             materials.append(material)
     
-    return AIHotCollectorOutput(materials=materials)
+    return AIHotCollectorOutput(aihot_materials=materials)

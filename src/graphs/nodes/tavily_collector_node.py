@@ -3,6 +3,7 @@ Tavily搜索采集节点
 使用Tavily搜索引擎采集AI资讯
 """
 import json
+import time
 from typing import List
 from langchain_core.runnables import RunnableConfig
 from langgraph.runtime import Runtime
@@ -18,36 +19,46 @@ def tavily_collector_node(
 ) -> TavilyCollectorOutput:
     """
     title: Tavily搜索采集
-    desc: 使用Tavily搜索引擎采集最新AI资讯
+    desc: 使用Tavily搜索引擎采集最新AI资讯（包含AI技术、产品发布、行业动态等）
     integrations: Web Search
     """
     ctx = runtime.context
     
     client = SearchClient(ctx=ctx)
     
-    # 使用Tavily进行深度搜索（模拟）
-    response = client.web_search_with_summary(
-        query="artificial intelligence latest developments 2024",
-        count=20
-    )
+    # 构建动态搜索关键词（包含时间戳确保搜索最新资讯）
+    current_year = time.strftime("%Y")
+    search_queries: List[str] = [
+        f"AI artificial intelligence latest developments {current_year}",
+        "AI technology breakthrough news",
+        "artificial intelligence product launch industry news"
+    ]
     
     materials: List[RawMaterial] = []
     
-    if response.web_items:
-        for item in response.web_items:
-            material = RawMaterial(
-                url=item.url,
-                title=item.title,
-                snippet=item.snippet or "",
-                source="tavily",
-                publish_time=item.publish_time,
-                extra_data={
-                    "site_name": item.site_name,
-                    "auth_info_level": item.auth_info_level,
-                    "summary": item.summary,
-                    "global_summary": response.summary
-                }
-            )
-            materials.append(material)
+    # 执行多次搜索以获取更全面的资讯
+    for query in search_queries:
+        response = client.web_search_with_summary(
+            query=query,
+            count=15
+        )
+        
+        if response.web_items:
+            for item in response.web_items:
+                material = RawMaterial(
+                    url=item.url,
+                    title=item.title,
+                    snippet=item.snippet or "",
+                    source="tavily",
+                    publish_time=item.publish_time,
+                    extra_data={
+                        "site_name": item.site_name,
+                        "auth_info_level": item.auth_info_level,
+                        "summary": item.summary,
+                        "global_summary": response.summary,
+                        "search_query": query
+                    }
+                )
+                materials.append(material)
     
-    return TavilyCollectorOutput(materials=materials)
+    return TavilyCollectorOutput(tavily_materials=materials)

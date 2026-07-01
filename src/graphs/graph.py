@@ -10,6 +10,9 @@ from graphs.state import (
     GraphInput,
     GraphOutput,
     
+    # 飞书表格初始化节点
+    FeishuTableInitInput,
+    
     # 采集节点
     AIHotCollectorInput,
     AINewsCollectorInput,
@@ -30,6 +33,8 @@ from graphs.state import (
 )
 
 # 导入所有节点函数
+from graphs.nodes.feishu_table_init_node import feishu_table_init_node
+
 from graphs.nodes.aihot_collector_node import aihot_collector_node
 from graphs.nodes.ainews_collector_node import ainews_collector_node
 from graphs.nodes.rss_collector_node import rss_collector_node
@@ -56,20 +61,23 @@ builder = StateGraph(
 
 # ========== 添加节点 ==========
 
-# 1. 采集节点（5个并行）
+# 1. 飞书表格初始化节点（入口节点）
+builder.add_node("feishu_table_init", feishu_table_init_node)
+
+# 2. 采集节点（5个并行）
 builder.add_node("aihot_collector", aihot_collector_node)
 builder.add_node("ainews_collector", ainews_collector_node)
 builder.add_node("rss_collector", rss_collector_node)
 builder.add_node("tavily_collector", tavily_collector_node)
 builder.add_node("github_collector", github_collector_node)
 
-# 2. 素材合并节点（汇聚点）
+# 3. 素材合并节点（汇聚点）
 builder.add_node("material_merge", material_merge_node)
 
-# 3. 去重过滤节点
+# 4. 去重过滤节点
 builder.add_node("dedup_filter", dedup_filter_node)
 
-# 4. AI热度打分节点（Agent节点）
+# 5. AI热度打分节点（Agent节点）
 builder.add_node(
     "heat_scorer",
     heat_scorer_node,
@@ -79,10 +87,10 @@ builder.add_node(
     }
 )
 
-# 5. 网页精读清洗节点
+# 6. 网页精读清洗节点
 builder.add_node("content_cleaner", content_cleaner_node)
 
-# 6. 推文生成节点（Agent节点）
+# 7. 推文生成节点（Agent节点）
 builder.add_node(
     "tweet_generator",
     tweet_generator_node,
@@ -92,30 +100,33 @@ builder.add_node(
     }
 )
 
-# 7. 飞书表格写入节点
+# 8. 飞书表格写入节点
 builder.add_node("feishu_writer", feishu_writer_node)
 
-# 8. 飞书机器人通知节点
+# 9. 飞书机器人通知节点
 builder.add_node("feishu_notifier", feishu_notifier_node)
 
 
 # ========== 设置入口点 ==========
 
-# 设置多个入口点实现并行采集
-builder.set_entry_point("aihot_collector")
+# 首先执行飞书表格初始化，然后并行采集
+builder.set_entry_point("feishu_table_init")
 
 
-# ========== 添加边（并行采集 -> 汇聚 -> 串行处理）==========
+# ========== 添加边（飞书初始化 -> 并行采集 -> 汇聚 -> 串行处理）==========
 
-# 采集节点并行执行
-builder.add_edge("aihot_collector", "material_merge")
-builder.add_edge("ainews_collector", "material_merge")
-builder.add_edge("rss_collector", "material_merge")
-builder.add_edge("tavily_collector", "material_merge")
-builder.add_edge("github_collector", "material_merge")
+# 飞书表格初始化完成后，并行启动所有采集节点
+builder.add_edge("feishu_table_init", "aihot_collector")
+builder.add_edge("feishu_table_init", "ainews_collector")
+builder.add_edge("feishu_table_init", "rss_collector")
+builder.add_edge("feishu_table_init", "tavily_collector")
+builder.add_edge("feishu_table_init", "github_collector")
 
-# 汇聚节点等待所有采集节点完成
-# 注意：LangGraph会自动等待所有入边完成后再执行汇聚节点
+# 采集节点并行执行后汇聚到合并节点（使用列表形式）
+builder.add_edge(
+    ["aihot_collector", "ainews_collector", "rss_collector", "tavily_collector", "github_collector"],
+    "material_merge"
+)
 
 # 串行处理流程
 builder.add_edge("material_merge", "dedup_filter")

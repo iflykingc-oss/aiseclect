@@ -54,4 +54,4 @@ def ainews_collector_node(
             )
             materials.append(material)
     
-    return AINewsCollectorOutput(materials=materials)
+    return AINewsCollectorOutput(ainews_materials=materials)
