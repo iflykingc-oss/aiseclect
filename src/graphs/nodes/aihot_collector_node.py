@@ -1,58 +1,53 @@
 """
-AIHOT雷达采集节点
-通过Web搜索技能采集AIHOT平台的最新资讯
+AIHOT 雷达采集（卡兹克的中文 AI 资讯精选）
+- 数据源: aihot.virxact.com REST API /api/public/items?mode=selected
+- 精编候选池，覆盖 ai-models / ai-products / industry / paper / tip 全分类
 """
-import json
+from __future__ import annotations
+
+import logging
 from typing import List
-from langchain_core.runnables import RunnableConfig
-from langgraph.runtime import Runtime
-from coze_coding_utils.runtime_ctx.context import Context
-from coze_coding_dev_sdk import SearchClient
+
 from graphs.state import AIHotCollectorInput, AIHotCollectorOutput, RawMaterial
+from tools.aihot_client import AIHotClient
+
+logger = logging.getLogger(__name__)
+
+# category 中文映射（来自 /api/public/daily section label）
+CATEGORY_ZH = {
+    "ai-models": "模型发布",
+    "ai-products": "产品发布",
+    "industry": "行业动态",
+    "paper": "论文研究",
+    "tip": "技巧与观点",
+}
 
 
-def aihot_collector_node(
-    state: AIHotCollectorInput,
-    config: RunnableConfig,
-    runtime: Runtime[Context]
-) -> AIHotCollectorOutput:
-    """
-    title: AIHOT雷达采集
-    desc: 从AIHOT平台采集最新AI行业资讯
-    integrations: Web Search
-    """
-    ctx = runtime.context
-    
-    # 使用Web搜索技能搜索AIHOT相关资讯
-    client = SearchClient(ctx=ctx)
-    
-    # 搜索AI热点资讯（使用特定站点过滤）
-    response = client.search(
-        query="AI artificial intelligence latest news trends",
-        search_type="web",
-        count=20,
-        need_url=True,
-        sites="ai-bot.cn,aihot.net,36kr.com,techcrunch.com",
-        need_summary=True,
-        time_range="1d"  # 最近1天
-    )
-    
+def aihot_collector_node(state: AIHotCollectorInput) -> AIHotCollectorOutput:
+    logger.info("AIHOT 雷达采集开始（卡兹克 ai-news-radar 同源精编）")
+    client = AIHotClient()
+    resp = client.list_items(mode="selected", take=max(20, state.max_per_source))
     materials: List[RawMaterial] = []
-    
-    if response.web_items:
-        for item in response.web_items:
-            material = RawMaterial(
-                url=item.url,
+    for item in resp.items[: state.max_per_source]:
+        if not item.url:
+            continue
+        materials.append(
+            RawMaterial(
+                url=item.permalink or item.url,  # 站内 permalink 优先（中文翻译 + 无墙）
                 title=item.title,
-                snippet=item.snippet or "",
+                snippet=item.summary or "",
+                content=item.summary or "",
                 source="aihot",
-                publish_time=item.publish_time,
+                publish_time=item.published_at,
                 extra_data={
-                    "site_name": item.site_name,
-                    "auth_info_level": item.auth_info_level,
-                    "summary": item.summary
-                }
+                    "original_url": item.url,
+                    "source_name": item.source,
+                    "category": item.category,
+                    "category_zh": CATEGORY_ZH.get(item.category or "", "未分类"),
+                    "score": item.score,
+                    "selected": item.selected,
+                },
             )
-            materials.append(material)
-    
+        )
+    logger.info(f"AIHOT 雷达: {len(materials)} 条（精选池共 {resp.count}）")
     return AIHotCollectorOutput(aihot_materials=materials)

@@ -1,64 +1,50 @@
 """
-Tavily搜索采集节点
-使用Tavily搜索引擎采集AI资讯
+综合采集（已替换为 AIHOT hot-topics）
+- 原 Tavily 综合搜索在国内被墙，改用 AIHOT 的多源热度排序
+- 数据源: aihot.virxact.com /api/public/hot-topics
+- 该端点按"多源报道数 + 时间衰减"排序，回答"现在 AI 圈最热是什么"
 """
-import json
-import time
+from __future__ import annotations
+
+import logging
 from typing import List
-from langchain_core.runnables import RunnableConfig
-from langgraph.runtime import Runtime
-from coze_coding_utils.runtime_ctx.context import Context
-from coze_coding_dev_sdk import SearchClient
+
 from graphs.state import TavilyCollectorInput, TavilyCollectorOutput, RawMaterial
+from tools.aihot_client import AIHotClient
+
+logger = logging.getLogger(__name__)
 
 
-def tavily_collector_node(
-    state: TavilyCollectorInput,
-    config: RunnableConfig,
-    runtime: Runtime[Context]
-) -> TavilyCollectorOutput:
-    """
-    title: Tavily搜索采集
-    desc: 使用Tavily搜索引擎采集最新AI资讯（包含AI技术、产品发布、行业动态等）
-    integrations: Web Search
-    """
-    ctx = runtime.context
-    
-    client = SearchClient(ctx=ctx)
-    
-    # 构建动态搜索关键词（包含时间戳确保搜索最新资讯）
-    current_year = time.strftime("%Y")
-    search_queries: List[str] = [
-        f"AI artificial intelligence latest developments {current_year}",
-        "AI technology breakthrough news",
-        "artificial intelligence product launch industry news"
-    ]
-    
+def tavily_collector_node(state: TavilyCollectorInput) -> TavilyCollectorOutput:
+    logger.info("AIHOT hot-topics 采集开始（多源热度排序）")
+    client = AIHotClient()
+    hot = client.hot_topics(take=max(20, state.max_per_source))
     materials: List[RawMaterial] = []
-    
-    # 执行多次搜索以获取更全面的资讯
-    for query in search_queries:
-        response = client.web_search_with_summary(
-            query=query,
-            count=15
+    for item in hot[: state.max_per_source]:
+        url = item.get("permalink") or item.get("url") or ""
+        if not url:
+            continue
+        title = item.get("title", "")
+        source_count = item.get("sourceCount", 0)
+        source_names = item.get("sourceNames", []) or []
+        snippet = f"🔥 {source_count} 个独立信源在报道"
+        if source_names:
+            snippet += f"\n来源: {', '.join(source_names[:5])}"
+        materials.append(
+            RawMaterial(
+                url=url,
+                title=title,
+                snippet=snippet,
+                content="",
+                source="aihot-hot",
+                publish_time=item.get("latestAt"),
+                extra_data={
+                    "source_count": source_count,
+                    "source_names": source_names,
+                    "original_url": item.get("url"),
+                    "source_name": item.get("source"),
+                },
+            )
         )
-        
-        if response.web_items:
-            for item in response.web_items:
-                material = RawMaterial(
-                    url=item.url,
-                    title=item.title,
-                    snippet=item.snippet or "",
-                    source="tavily",
-                    publish_time=item.publish_time,
-                    extra_data={
-                        "site_name": item.site_name,
-                        "auth_info_level": item.auth_info_level,
-                        "summary": item.summary,
-                        "global_summary": response.summary,
-                        "search_query": query
-                    }
-                )
-                materials.append(material)
-    
+    logger.info(f"AIHOT hot-topics: {len(materials)} 条")
     return TavilyCollectorOutput(tavily_materials=materials)
