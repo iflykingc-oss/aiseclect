@@ -168,8 +168,9 @@ def _quality_check_x(data: dict) -> Tuple[bool, str]:
     if not tweet:
         return False, "tweet_content 空"
     lines = _count_lines(tweet)
-    if lines < 2 or lines > 8:
-        return False, f"X 推文行数 {lines} 不在 2-8"
+    # 上限放宽到 10 行：因为「内心 OS」融进推文后可能多一行
+    if lines < 2 or lines > 10:
+        return False, f"X 推文行数 {lines} 不在 2-10"
     if "我" not in tweet and "我们" not in tweet:
         return False, "X 推文缺「我/我们」（人称）"
     for pat in BANNED_PATTERNS:
@@ -226,19 +227,19 @@ def _normalize_platform(raw: str) -> str:
 
 
 def _build_draft(mat: ScoredMaterial, data: dict) -> Optional[TweetDraft]:
-    """从 LLM 生成的 dict 构造 TweetDraft。质量门禁全过才返回。"""
+    """从 LLM 生成的 dict 构造 TweetDraft。质量门禁全过才返回。
+
+    viewpoint 字段已不再要求 LLM 输出（内心 OS 融进 tweet_content），
+    但保留字段兼容旧数据；若 LLM 意外输出了也存下，不做质量门禁。
+    """
     platform = _normalize_platform(data.get("platform"))
 
-    # 质量门禁（X 部分对所有 platform 都要过）
+    # 质量门禁：X 推文对所有 platform 都要过
     ok_x, reason_x = _quality_check_x(data)
     if not ok_x:
         logger.debug(f"X 推文门禁拒: {mat.title[:50]} | {reason_x}")
         return None
     tweet = (data.get("tweet_content") or "").strip()
-    ok_vp, reason_vp = _quality_check_viewpoint(data, tweet)
-    if not ok_vp:
-        logger.debug(f"viewpoint 门禁拒: {mat.title[:50]} | {reason_vp}")
-        return None
 
     # 小红书门禁：仅当 platform=X+小红书 时才检查
     if platform == "X+小红书":
@@ -264,7 +265,7 @@ def _build_draft(mat: ScoredMaterial, data: dict) -> Optional[TweetDraft]:
         category=data.get("category") or mat.category,
         heat_score=float(data.get("heat_score") or mat.heat_score),
         tweet_content=tweet,
-        viewpoint=(data.get("viewpoint") or "").strip(),
+        viewpoint=(data.get("viewpoint") or "").strip(),  # 已废弃字段，兼容旧数据
         xiaohongshu_title=xhs_title,
         xiaohongshu_content=xhs,
         xiaohongshu_tags=tags,

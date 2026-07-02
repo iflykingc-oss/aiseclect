@@ -29,7 +29,7 @@ def _build_records(drafts: List[TweetDraft]) -> List[dict]:
                     "分类": d.category,
                     "热度评分": d.heat_score,
                     "推文内容": d.tweet_content,
-                    "独立观点": d.viewpoint,
+                    # 「独立观点」列已废弃：内心 OS 已融进推文内容里，不再单独写
                     "小红书标题": d.xiaohongshu_title,
                     "小红书内容": d.xiaohongshu_content,
                     "小红书标签": ", ".join(d.xiaohongshu_tags) if d.xiaohongshu_tags else "",
