@@ -270,7 +270,7 @@ def _build_draft(mat: ScoredMaterial, data: dict) -> Optional[TweetDraft]:
         xiaohongshu_content=xhs,
         xiaohongshu_tags=tags,
         platform=platform,
-        status="待发布",
+        status="待审核",
         generated_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
     )
 

@@ -64,7 +64,7 @@ class TweetDraft(BaseModel):
     # Thread 长推预留字段（暂未启用；当 tweet_content 超长/信息密度高时可拆分）
     is_thread: bool = False
     thread_parts: List[str] = Field(default_factory=list)
-    status: str = "待发布"
+    status: str = "待审核"
     generated_at: str = ""
 
 
