@@ -163,3 +163,53 @@ class FeishuClient:
             logger.error(f"batch_create 失败: {data.get('msg')}")
             return []
         return (data.get("data") or {}).get("records") or []
+
+    def list_all_record_ids(self, app_token: str, table_id: str) -> List[str]:
+        """列出表内全部 record_id（自动翻页）。仅返回 id，用于批量删除。"""
+        record_ids: List[str] = []
+        page_token: Optional[str] = None
+        for _ in range(200):  # 200 页 × 500 条 = 10 万条上限，防死循环
+            params: Dict[str, Any] = {"page_size": 500}
+            if page_token:
+                params["page_token"] = page_token
+            resp = requests.get(
+                f"{FEISHU_BASE}/bitable/v1/apps/{app_token}/tables/{table_id}/records",
+                headers=self._headers(),
+                params=params,
+                timeout=self.timeout,
+            )
+            data = self._safe_json(resp)
+            if data.get("code") != 0:
+                logger.error(f"list_records 失败: {data.get('msg')}")
+                break
+            body = data.get("data") or {}
+            for item in body.get("items") or []:
+                rid = item.get("record_id")
+                if rid:
+                    record_ids.append(rid)
+            if not body.get("has_more"):
+                break
+            page_token = body.get("page_token")
+            if not page_token:
+                break
+        return record_ids
+
+    def batch_delete_records(self, app_token: str, table_id: str, record_ids: List[str]) -> int:
+        """批量删除记录。单次 500 条上限，自动分批。返回成功删除数量。"""
+        if not record_ids:
+            return 0
+        deleted = 0
+        for i in range(0, len(record_ids), 500):
+            chunk = record_ids[i:i + 500]
+            resp = requests.post(
+                f"{FEISHU_BASE}/bitable/v1/apps/{app_token}/tables/{table_id}/records/batch_delete",
+                headers=self._headers(),
+                json={"records": chunk},
+                timeout=self.timeout,
+            )
+            data = self._safe_json(resp)
+            if data.get("code") != 0:
+                logger.error(f"batch_delete 失败: {data.get('msg')}")
+                continue
+            deleted += len(chunk)
+        return deleted
