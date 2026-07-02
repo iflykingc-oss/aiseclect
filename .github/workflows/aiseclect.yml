@@ -65,6 +65,8 @@ jobs:
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
           # Tavily
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          # 飞书告警机器人（可选，不配则告警走 stdout）
+          FEISHU_ALERT_WEBHOOK: ${{ secrets.FEISHU_ALERT_WEBHOOK }}
           # GitHub（可选）
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 行为参数（手动触发时可覆盖）
