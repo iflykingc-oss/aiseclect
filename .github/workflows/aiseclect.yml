@@ -25,6 +25,14 @@ on:
         options:
           - 'false'
           - 'true'
+      cleanup_pending:
+        description: '先删除飞书表格中处理状态=待审核的旧记录（慎用）'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 # 防止并发跑（比如上一次还没结束）
 concurrency:
@@ -73,8 +81,13 @@ jobs:
           AISECLECT_MAX_PER_SOURCE: ${{ github.event.inputs.max_per_source || '10' }}
           AISECLECT_MIN_HEAT_SCORE: ${{ github.event.inputs.min_heat_score || '40' }}
           AISECLECT_CLEAR_DEDUP: ${{ github.event.inputs.clear_dedup || 'false' }}
+          AISECLECT_CLEANUP_PENDING: ${{ github.event.inputs.cleanup_pending || 'false' }}
         run: |
           set -euo pipefail
+          if [ "${AISECLECT_CLEANUP_PENDING}" = "true" ]; then
+            echo "Cleaning Feishu pending records before run"
+            .venv/bin/python scripts/cleanup_feishu_pending.py --confirm
+          fi
           ARGS="--max-per-source ${AISECLECT_MAX_PER_SOURCE} --min-heat-score ${AISECLECT_MIN_HEAT_SCORE}"
           if [ "${AISECLECT_CLEAR_DEDUP}" = "true" ]; then
             ARGS="${ARGS} --clear-dedup"

@@ -33,10 +33,35 @@ def _normalize_platform(platform: str) -> str:
     return "X+通用内容" if s else "仅X"
 
 
-def _build_records(drafts: List[TweetDraft]) -> List[dict]:
+def _extract_url_value(value) -> str:
+    if isinstance(value, dict):
+        return str(value.get("link") or value.get("text") or "")
+    if isinstance(value, list) and value:
+        first = value[0]
+        if isinstance(first, dict):
+            return str(first.get("link") or first.get("text") or "")
+    return str(value or "")
+
+
+def _existing_links(client: FeishuClient, app_token: str, table_id: str) -> set[str]:
+    links: set[str] = set()
+    for rec in client.list_records(app_token, table_id):
+        fields = rec.get("fields") or {}
+        url = _extract_url_value(fields.get("链接"))
+        if url:
+            links.add(url.strip())
+    return links
+
+
+def _build_records(drafts: List[TweetDraft], existing_links: set[str] | None = None) -> List[dict]:
     now_ms = int(time.time() * 1000)
     records: List[dict] = []
+    seen_links = set(existing_links or set())
     for d in drafts:
+        if d.url in seen_links:
+            logger.info(f"飞书已存在，跳过: {d.url}")
+            continue
+        seen_links.add(d.url)
         platform = _normalize_platform(d.platform)
         other_title = d.other_title if platform == "X+通用内容" else ""
         other_content = d.other_content if platform == "X+通用内容" else ""
@@ -80,7 +105,13 @@ def feishu_writer_node(state: FeishuWriterInput) -> FeishuWriterOutput:
     except Exception as e:
         return FeishuWriterOutput(feishu_init_message=f"飞书客户端初始化失败: {e}")
 
-    records = _build_records(state.tweet_drafts)
+    try:
+        existing = _existing_links(client, state.feishu_app_token, state.feishu_table_id)
+    except Exception as e:
+        logger.warning(f"读取飞书已有链接失败，将继续尝试写入: {e}")
+        existing = set()
+
+    records = _build_records(state.tweet_drafts, existing_links=existing)
     try:
         created = client.batch_create_records(
             state.feishu_app_token, state.feishu_table_id, records, with_shared_url=True

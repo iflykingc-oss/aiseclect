@@ -164,9 +164,9 @@ class FeishuClient:
             return []
         return (data.get("data") or {}).get("records") or []
 
-    def list_all_record_ids(self, app_token: str, table_id: str) -> List[str]:
-        """列出表内全部 record_id（自动翻页）。仅返回 id，用于批量删除。"""
-        record_ids: List[str] = []
+    def list_records(self, app_token: str, table_id: str) -> List[Dict[str, Any]]:
+        """列出表内全部记录（自动翻页），返回 record_id + fields。"""
+        records: List[Dict[str, Any]] = []
         page_token: Optional[str] = None
         for _ in range(200):  # 200 页 × 500 条 = 10 万条上限，防死循环
             params: Dict[str, Any] = {"page_size": 500}
@@ -183,15 +183,21 @@ class FeishuClient:
                 logger.error(f"list_records 失败: {data.get('msg')}")
                 break
             body = data.get("data") or {}
-            for item in body.get("items") or []:
-                rid = item.get("record_id")
-                if rid:
-                    record_ids.append(rid)
+            records.extend(body.get("items") or [])
             if not body.get("has_more"):
                 break
             page_token = body.get("page_token")
             if not page_token:
                 break
+        return records
+
+    def list_all_record_ids(self, app_token: str, table_id: str) -> List[str]:
+        """列出表内全部 record_id（自动翻页）。仅返回 id，用于批量删除。"""
+        record_ids: List[str] = []
+        for item in self.list_records(app_token, table_id):
+            rid = item.get("record_id")
+            if rid:
+                record_ids.append(rid)
         return record_ids
 
     def batch_delete_records(self, app_token: str, table_id: str, record_ids: List[str]) -> int:
