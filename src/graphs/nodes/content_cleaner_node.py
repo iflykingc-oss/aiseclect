@@ -162,6 +162,8 @@ def content_cleaner_node(state: ContentCleanerInput) -> ContentCleanerOutput:
                 category=mat.category,
                 heat_score=mat.heat_score,
                 score_reason=mat.score_reason,
+                related_urls=mat.related_urls,
+                cluster_size=mat.cluster_size,
             )
         )
     reduction = (1 - total_after / total_before) * 100 if total_before else 0

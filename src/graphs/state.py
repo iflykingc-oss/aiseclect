@@ -49,18 +49,23 @@ class ScoredMaterial(BaseModel):
 
 
 class TweetDraft(BaseModel):
-    """推文草稿（双平台）"""
+    """内容草稿（X + 其他平台通用内容）"""
     unique_id: str
     url: str
     title: str = ""
     category: str = "未分类"
     heat_score: float = 0.0
-    tweet_content: str = ""              # X 平台（≤280 字符）
-    viewpoint: str = ""                  # 独立观点
-    xiaohongshu_title: str = ""          # 小红书标题
-    xiaohongshu_content: str = ""        # 小红书正文
+    tweet_content: str = ""              # X 平台内容
+    other_title: str = ""                # 小红书/微头条/贴图号通用标题
+    other_content: str = ""              # 小红书/微头条/贴图号通用正文
+    other_tags: List[str] = Field(default_factory=list)
+    image_prompt: str = ""               # 配图提示词（仅通用内容需要）
+    platform: str = "X+通用内容"          # 发布平台：X+通用内容 / 仅X
+    # 历史兼容字段：新流程不再写入飞书
+    viewpoint: str = ""
+    xiaohongshu_title: str = ""
+    xiaohongshu_content: str = ""
     xiaohongshu_tags: List[str] = Field(default_factory=list)
-    platform: str = "X+小红书"           # 发布平台：X+小红书 / 仅X
     # Thread 长推预留字段（暂未启用；当 tweet_content 超长/信息密度高时可拆分）
     is_thread: bool = False
     thread_parts: List[str] = Field(default_factory=list)
@@ -263,7 +268,7 @@ class TweetGeneratorInput(BaseModel):
 class TweetGeneratorOutput(BaseModel):
     tweet_drafts: List[TweetDraft] = Field(default_factory=list)
     total_tweets: int = 0
-    xiaohongshu_count: int = 0
+    other_platform_count: int = 0
 
 
 # ========== 飞书节点 ==========

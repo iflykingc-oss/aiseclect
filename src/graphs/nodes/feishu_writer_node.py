@@ -16,10 +16,32 @@ from tools.feishu_client import FeishuClient
 logger = logging.getLogger(__name__)
 
 
+def _normalize_status(status: str) -> str:
+    if status == "待发布":
+        return "待审核"
+    if status in ("待审核", "已发布", "需修改", "驳回"):
+        return status
+    return "待审核"
+
+
+def _normalize_platform(platform: str) -> str:
+    s = (platform or "").strip().replace(" ", "")
+    if s in ("仅X", "仅x", "只发X", "只X", "Xonly", "X-only"):
+        return "仅X"
+    if s in ("X+小红书", "X+其他平台", "X+通用", "X+通用内容"):
+        return "X+通用内容"
+    return "X+通用内容" if s else "仅X"
+
+
 def _build_records(drafts: List[TweetDraft]) -> List[dict]:
     now_ms = int(time.time() * 1000)
     records: List[dict] = []
     for d in drafts:
+        platform = _normalize_platform(d.platform)
+        other_title = d.other_title if platform == "X+通用内容" else ""
+        other_content = d.other_content if platform == "X+通用内容" else ""
+        other_tags = d.other_tags if platform == "X+通用内容" else []
+        image_prompt = d.image_prompt if platform == "X+通用内容" else ""
         records.append(
             {
                 "fields": {
@@ -29,13 +51,13 @@ def _build_records(drafts: List[TweetDraft]) -> List[dict]:
                     "分类": d.category,
                     "热度评分": d.heat_score,
                     "推文内容": d.tweet_content,
-                    # 「独立观点」列已废弃：内心 OS 已融进推文内容里，不再单独写
-                    "小红书标题": d.xiaohongshu_title,
-                    "小红书内容": d.xiaohongshu_content,
-                    "小红书标签": ", ".join(d.xiaohongshu_tags) if d.xiaohongshu_tags else "",
-                    "发布平台": d.platform or "X+小红书",
-                    "处理状态": d.status or "待审核",
-                    # 人工审核结果/备注创建时留空，等运营手动填
+                    "通用标题": other_title,
+                    "通用内容": other_content,
+                    "通用标签": ", ".join(other_tags) if other_tags else "",
+                    "配图提示词": image_prompt,
+                    "发布平台": platform,
+                    "处理状态": _normalize_status(d.status),
+                    # 审核备注创建时留空，等运营手动填
                     "创建时间": now_ms,
                 }
             }

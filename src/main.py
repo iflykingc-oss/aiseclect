@@ -127,7 +127,11 @@ def _print_summary(out: GraphOutput) -> None:
         for i, t in enumerate(out.tweet_drafts[:3], 1):
             console.print(f"\n[cyan]#{i}[/cyan] [bold]{t.title}[/bold]  (热 {t.heat_score:.0f})")
             console.print(f"  X: {t.tweet_content}")
-            console.print(f"  小红书: {t.xiaohongshu_title} | {t.xiaohongshu_content[:80]}")
+            if t.platform == "X+通用内容":
+                console.print(f"  通用内容: {t.other_title} | {t.other_content[:80]}")
+                console.print(f"  配图提示词: {t.image_prompt[:100]}")
+            else:
+                console.print("  通用内容: (仅X，未生成)")
 
 
 async def _run(args: argparse.Namespace) -> GraphOutput:

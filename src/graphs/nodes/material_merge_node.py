@@ -16,13 +16,37 @@ from graphs.state import (
 logger = logging.getLogger(__name__)
 
 
-_CATEGORY_BY_SOURCE = {
-    "github": "开源项目",
-    "aihot": "行业热点",
-    "ainews": "技术突破",
-    "rss": "社区动态",
-    "tavily": "综合资讯",
-}
+def _category_from_raw(raw: RawMaterial) -> str:
+    """轻量分类：优先用源数据分类，其次按 source/title 规则兜底。"""
+    extra_category_zh = (raw.extra_data or {}).get("category_zh")
+    if extra_category_zh:
+        return str(extra_category_zh)
+
+    extra_category = str((raw.extra_data or {}).get("category") or "").lower()
+    source = (raw.source or "").lower()
+    text = f"{source} {raw.title or ''} {raw.snippet or ''}".lower()
+
+    if "github" in source:
+        return "开源项目"
+    if "paper" in source or "paper" in extra_category or "arxiv" in text or "论文" in text:
+        return "论文研究"
+    if "ai-models" in source or extra_category == "ai-models" or "模型" in text:
+        return "模型发布"
+    if "ai-products" in source or extra_category == "ai-products" or "产品" in text:
+        return "AI 产品"
+    if "aihot-hot" in source or "radar-daily" in source or "hot" in source:
+        return "行业热点"
+    if "sspai" in source or "tool" in source or "工具" in text or "效率" in text:
+        return "效率工具"
+    if "qbitai" in source or "industry" in extra_category:
+        return "行业动态"
+    if any(k in text for k in ("安全", "隐私", "泄露", "后门", "漏洞", "权限")):
+        return "安全隐私"
+    if any(k in text for k in ("翻车", "争议", "涨价", "下架", "事故")):
+        return "争议事件"
+    if any(k in text for k in ("视频", "图片", "图像", "音乐", "多模态", "生成")):
+        return "多模态生成"
+    return "综合资讯"
 
 
 def material_merge_node(state: MaterialMergeInput) -> MaterialMergeOutput:
@@ -45,7 +69,7 @@ def material_merge_node(state: MaterialMergeInput) -> MaterialMergeOutput:
                 content=raw.content or "",
                 source=raw.source or "",
                 publish_time=raw.publish_time,
-                category=_CATEGORY_BY_SOURCE.get(raw.source, "未分类"),
+                category=_category_from_raw(raw),
             )
         )
 
