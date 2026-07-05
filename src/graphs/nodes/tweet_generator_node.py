@@ -60,16 +60,21 @@ BANNED_PATTERNS = [
     re.compile(r"不容错过|值得深思|值得收藏"),
 ]
 
-# 明显不适合泛平台的技术/圈内素材：即使 LLM 写了通用内容，也强制仅X。
-ONLY_X_PATTERNS = [
+# 明显不适合泛平台的硬技术素材：即使 LLM 写了通用内容，也强制仅X。
+HARD_ONLY_X_PATTERNS = [
     re.compile(r"\b(API|SDK|endpoint|migration|deprecation|deprecated|benchmark|CUDA|kernel|compiler)\b", re.I),
-    re.compile(r"arxiv|paper|论文|预印本|基准|评测榜|训练技巧|微调|推理框架|端点|迁移|退役|废弃", re.I),
+    re.compile(r"arxiv|预印本|基准|评测榜|训练技巧|微调|推理框架|端点|迁移|退役|废弃", re.I),
     re.compile(r"\b(Snowflake|Databricks|Salesforce|Kubernetes|K8s)\b", re.I),
 ]
 
+# 论文/研究/开发者内容如果能转成普通人收益或风险，则允许生成通用内容。
+SOFT_ONLY_X_PATTERNS = [
+    re.compile(r"paper|论文", re.I),
+]
+
 GENERAL_FRIENDLY_PATTERNS = [
-    re.compile(r"工具|产品|硬件|眼镜|手机|耳机|视频|图片|图像|音乐|生成|效率|办公|创作者|打工人|隐私|安全|泄露|后门|翻车|涨价|浏览器|搜索|助手|Agent", re.I),
-    re.compile(r"\b(ChatGPT|Claude|Gemini|Sora|Suno|Cursor|Notion|豆包|元宝|可灵|剪映)\b", re.I),
+    re.compile(r"工具|产品|硬件|眼镜|手机|耳机|视频|图片|图像|音乐|生成|效率|办公|创作者|打工人|隐私|安全|泄露|后门|翻车|涨价|浏览器|搜索|助手|Agent|学生|学习|教育|普通人|职场|截图|PDF", re.I),
+    re.compile(r"\b(ChatGPT|Claude|Gemini|Sora|Suno|Cursor|Notion|LLM|Agent|豆包|元宝|可灵|剪映)\b", re.I),
 ]
 
 # 按 source 字段自动给 prompt 提示写作视角。不是输出字段。
@@ -236,10 +241,13 @@ def _material_text(mat: ScoredMaterial) -> str:
 
 def _force_only_x(mat: ScoredMaterial) -> bool:
     text = _material_text(mat)
-    if any(p.search(text) for p in ONLY_X_PATTERNS):
+    is_general_friendly = any(p.search(text) for p in GENERAL_FRIENDLY_PATTERNS)
+    if any(p.search(text) for p in HARD_ONLY_X_PATTERNS) and not is_general_friendly:
+        return True
+    if any(p.search(text) for p in SOFT_ONLY_X_PATTERNS) and not is_general_friendly:
         return True
     # GitHub Trending 中没有明确普通用户场景的，默认仅X。
-    if "github" in (mat.source or "") and not any(p.search(text) for p in GENERAL_FRIENDLY_PATTERNS):
+    if "github" in (mat.source or "") and not is_general_friendly:
         return True
     return False
 
