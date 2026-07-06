@@ -124,7 +124,7 @@ class GlobalState(BaseModel):
 
     # 行为控制（从 GraphInput 透传）
     max_per_source: int = 10
-    min_heat_score: float = 40.0
+    min_heat_score: float = 30.0
     clear_dedup: bool = False
     write_to_feishu: bool = True
 
@@ -147,7 +147,7 @@ class GraphInput(BaseModel):
 
     # 行为配置
     max_per_source: int = Field(default=10, description="每个采集源最大条数")
-    min_heat_score: float = Field(default=40.0, description="进入推文生成的最低热度分")
+    min_heat_score: float = Field(default=30.0, description="进入推文生成的最低热度分")
     clear_dedup: bool = Field(default=False, description="是否清空历史去重状态")
     write_to_feishu: bool = Field(default=True, description="是否把推文写入飞书表格")
     write_to_local: bool = Field(default=True, description="是否本地落盘 output/tweets_*.json")

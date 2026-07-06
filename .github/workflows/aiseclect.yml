@@ -82,7 +82,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 行为参数（手动触发时可覆盖）
           AISECLECT_MAX_PER_SOURCE: ${{ github.event.inputs.max_per_source || '10' }}
-          AISECLECT_MIN_HEAT_SCORE: ${{ github.event.inputs.min_heat_score || '40' }}
+          AISECLECT_MIN_HEAT_SCORE: ${{ github.event.inputs.min_heat_score || '30' }}
           AISECLECT_CLEAR_DEDUP: ${{ github.event.inputs.clear_dedup || 'false' }}
           AISECLECT_CLEANUP_PENDING: ${{ github.event.inputs.cleanup_pending || 'false' }}
         run: |

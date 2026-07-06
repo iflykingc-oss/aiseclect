@@ -137,6 +137,29 @@ class FeishuClient:
                 created.append(name)
         return created
 
+    def delete_field(self, app_token: str, table_id: str, field_id: str) -> bool:
+        resp = requests.delete(
+            f"{FEISHU_BASE}/bitable/v1/apps/{app_token}/tables/{table_id}/fields/{field_id}",
+            headers=self._headers(),
+            timeout=self.timeout,
+        )
+        data = self._safe_json(resp)
+        if data.get("code") != 0:
+            logger.error(f"delete_field '{field_id}' 失败: {data.get('msg')}")
+            return False
+        return True
+
+    def remove_fields(self, app_token: str, table_id: str, obsolete_names: List[str]) -> List[str]:
+        """删除指定名字的字段，返回已成功删除的字段名列表。字段不存在则跳过。"""
+        target = set(obsolete_names)
+        removed: List[str] = []
+        for f in self.list_fields(app_token, table_id):
+            if f.field_name not in target:
+                continue
+            if self.delete_field(app_token, table_id, f.field_id):
+                removed.append(f.field_name)
+        return removed
+
     # ---------- 记录 ----------
 
     def batch_create_records(

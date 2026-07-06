@@ -26,26 +26,29 @@ REQUIRED_FIELDS: List[dict] = [
     {"name": "小红书标题", "type": 1},
     {"name": "小红书内容", "type": 1},
     {"name": "小红书标签", "type": 1},
-    # 历史通用字段保留兼容，不主动删除。
-    {"name": "通用标题", "type": 1},
-    {"name": "通用内容", "type": 1},
-    {"name": "通用标签", "type": 1},
     {"name": "配图提示词", "type": 1},
-    {"name": "内容角度", "type": 1},
-    {"name": "Hook类型", "type": 1},
-    {"name": "平台判断理由", "type": 1},
-    {"name": "X质量分", "type": 2},
-    {"name": "小红书质量分", "type": 2},
-    {"name": "质量备注", "type": 1},
     {"name": "素材来源", "type": 1},
-    {"name": "发现原因", "type": 1},
-    {"name": "评分理由", "type": 1},
     {"name": "发布平台", "type": 3},              # 单选：X+小红书 / 仅X
     # 状态字段合并：LLM 写入默认「待审核」，运营手动改为 已发布 / 需修改 / 驳回
-    # 老的「人工审核结果」列已废弃，不再自动创建（历史数据保留在飞书表格里）
     {"name": "处理状态", "type": 3},              # 单选：待审核 / 已发布 / 需修改 / 驳回
     {"name": "审核备注", "type": 1},              # 自由文本，运营写修改建议 / 发布链接等
     {"name": "创建时间", "type": 5},
+]
+
+# 已废弃字段（老"通用XXX" 冗余组 + 8 个独立诊断列 + 上一版短暂引入的元信息列），init 阶段硬删
+OBSOLETE_FIELDS: List[str] = [
+    "通用标题",
+    "通用内容",
+    "通用标签",
+    "发现原因",
+    "评分理由",
+    "平台判断理由",
+    "Hook类型",
+    "内容角度",
+    "质量备注",
+    "X质量分",
+    "小红书质量分",
+    "元信息",
 ]
 
 
@@ -124,6 +127,14 @@ def feishu_table_init_node(state: FeishuTableInitInput) -> FeishuTableInitOutput
             feishu_init_success=False,
             feishu_init_message=f"补建字段失败: {e}",
         )
+
+    # 硬删废弃字段
+    try:
+        removed = client.remove_fields(feishu_app_token, feishu_table_id, OBSOLETE_FIELDS)
+        if removed:
+            logger.info(f"已删除废弃字段: {removed}")
+    except Exception as e:
+        logger.warning(f"删除废弃字段失败（不阻塞主流程）: {e}")
 
     init_success = True
     if fields_created:
