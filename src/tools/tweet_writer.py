@@ -30,8 +30,12 @@ def _draft_dump(draft: TweetDraft | dict[str, Any]) -> dict[str, Any]:
     return dict(draft)
 
 
-def write_tweets(drafts: List[TweetDraft | dict[str, Any]], prefix: str = "tweets") -> Path:
-    """把推文草稿写到 ./output/{prefix}_YYYYMMDD_HHMMSS.json。返回文件路径。"""
+def write_tweets(
+    drafts: List[TweetDraft | dict[str, Any]],
+    prefix: str = "tweets",
+    rejects: List[dict[str, Any]] | None = None,
+) -> Path:
+    """把推文草稿写到 ./output/{prefix}_YYYYMMDD_HHMMSS.json，同时写质量/拒绝报告。"""
     out_dir = _output_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = time.strftime("%Y%m%d_%H%M%S")
@@ -45,7 +49,55 @@ def write_tweets(drafts: List[TweetDraft | dict[str, Any]], prefix: str = "tweet
     }
     with path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
+
+    rejects = rejects or []
+
+    report_path = out_dir / f"quality_report_{ts}.json"
+    report = {
+        "generated_at": generated_at,
+        "count": len(drafts),
+        "items": [
+            {
+                "unique_id": d.get("unique_id"),
+                "url": d.get("url"),
+                "title": d.get("title"),
+                "source": d.get("source"),
+                "category": d.get("category"),
+                "heat_score": d.get("heat_score"),
+                "score_reason": d.get("score_reason"),
+                "discovery_reason": d.get("discovery_reason"),
+                "platform": d.get("platform"),
+                "platform_reason": d.get("platform_reason"),
+                "content_angle": d.get("content_angle"),
+                "hook_type": d.get("hook_type"),
+                "x_quality_score": d.get("x_quality_score"),
+                "xhs_quality_score": d.get("xhs_quality_score"),
+                "quality_notes": d.get("quality_notes"),
+                "tweet_preview": (d.get("tweet_content") or "")[:120],
+                "xhs_title": d.get("other_title"),
+            }
+            for d in payload["tweets"]
+        ],
+    }
+    with report_path.open("w", encoding="utf-8") as f:
+        json.dump(report, f, ensure_ascii=False, indent=2)
+
+    reject_path = out_dir / f"reject_report_{ts}.json"
+    reject_payload = {
+        "generated_at": generated_at,
+        "count": len(rejects),
+        "items": rejects,
+        "stage_stats": {},
+    }
+    for item in rejects:
+        stage = str(item.get("stage") or "unknown")
+        reject_payload["stage_stats"][stage] = reject_payload["stage_stats"].get(stage, 0) + 1
+    with reject_path.open("w", encoding="utf-8") as f:
+        json.dump(reject_payload, f, ensure_ascii=False, indent=2)
+
     logger.info(f"推文草稿已写入: {path} ({len(drafts)} 条)")
+    logger.info(f"质量报告已写入: {report_path}")
+    logger.info(f"拒绝报告已写入: {reject_path} ({len(rejects)} 条)")
     return path
 
 
@@ -73,13 +125,13 @@ def summarize(drafts: List[TweetDraft | dict[str, Any]]) -> str:
                 missing_image_prompt += 1
         if len(d.get("tweet_content") or "") > 280:
             over_x += 1
-        if len(d.get("other_content") or "") > 550:
+        if len(d.get("other_content") or "") > 450:
             over_other += 1
     for cat, n in sorted(by_cat.items(), key=lambda x: -x[1]):
         lines.append(f"  - {cat}: {n}")
     lines.append(f"仅X: {only_x} 条")
-    lines.append(f"X+通用内容: {general} 条")
+    lines.append(f"X+小红书: {general} 条")
     lines.append(f"X 平台超 280 字符: {over_x} 条")
-    lines.append(f"通用内容超 550 字: {over_other} 条")
-    lines.append(f"通用内容缺配图提示词: {missing_image_prompt} 条")
+    lines.append(f"小红书正文超 450 字: {over_other} 条")
+    lines.append(f"小红书缺配图提示词: {missing_image_prompt} 条")
     return "\n".join(lines)

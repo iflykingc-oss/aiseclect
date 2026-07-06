@@ -59,6 +59,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
+      - name: Syntax check
+        run: .venv/bin/python -m compileall src
+
       - name: Run workflow
         env:
           # 飞书

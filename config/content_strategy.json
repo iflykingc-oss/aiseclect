@@ -1,0 +1,91 @@
+{
+  "x": {
+    "hook_types": [
+      {
+        "key": "contrarian",
+        "name": "反常识",
+        "description": "指出这不是表面上的新闻，而是背后的权力、成本、门槛或生态变化。"
+      },
+      {
+        "key": "risk_alert",
+        "name": "风险提醒",
+        "description": "强调隐私、安全、权限、价格、下架、封锁、合规等风险。"
+      },
+      {
+        "key": "opportunity",
+        "name": "机会窗口",
+        "description": "指出谁可以马上受益，机会在工具、产品、应用层还是工作流。"
+      },
+      {
+        "key": "niche_quake",
+        "name": "圈层爆点",
+        "description": "普通人看着小，但在 AI/开发者/开源/VPN/proxy 圈层是大事件。"
+      },
+      {
+        "key": "ecosystem_shift",
+        "name": "生态迁移",
+        "description": "维护者、平台、市场、开源生态、分发渠道发生变化。"
+      },
+      {
+        "key": "cost_change",
+        "name": "成本变化",
+        "description": "价格、订阅、额度、算力、接入门槛或替代成本变化。"
+      },
+      {
+        "key": "who_is_affected",
+        "name": "谁受影响",
+        "description": "直接点名开发者、创作者、打工人、学生、企业、普通用户。"
+      }
+    ],
+    "banned_weak_hooks": ["值得关注", "重要更新", "最新消息", "又有新消息", "一文看懂", "简单说", "快速了解"],
+    "quality_rubric": {
+      "hook_strength": 25,
+      "fact_density": 20,
+      "impact_clarity": 20,
+      "voice_sharpness": 15,
+      "non_ai_tone": 10,
+      "truthfulness": 10
+    },
+    "pass_score": 75
+  },
+  "xiaohongshu": {
+    "title_patterns": [
+      "避坑型：这类 AI 工具别急着付费",
+      "人群型：打工人用 AI 前先看这 3 点",
+      "对比型：ChatGPT 和 Claude 适合的人不一样",
+      "清单型：5 个适合新手的 AI 工作流",
+      "结果型：我会优先关注这类 AI 产品",
+      "风险型：AI 工具越方便，隐私越要小心"
+    ],
+    "tag_strategy": {
+      "big_terms": ["AI工具", "科技趋势", "效率工具"],
+      "scenario_terms": ["AI办公", "打工人效率", "创作者工具", "AI学习", "AI写作"],
+      "specific_terms": ["ChatGPT技巧", "Claude", "Cursor", "AI绘画", "AI视频"],
+      "risk_terms": ["避坑", "隐私安全", "涨价提醒", "工具测评"]
+    },
+    "quality_rubric": {
+      "title_clickability": 25,
+      "search_keyword_fit": 20,
+      "scenario_relevance": 20,
+      "practical_value": 20,
+      "xhs_tone": 10,
+      "cover_prompt_quality": 5
+    },
+    "pass_score": 80
+  },
+  "angles": {
+    "breaking_news": ["发布", "上线", "开放", "推出", "更新", "release", "launch"],
+    "risk_alert": ["风险", "隐私", "安全", "泄露", "漏洞", "CVE", "权限", "封锁", "下架", "停止"],
+    "tool_use_case": ["工具", "产品", "效率", "办公", "创作者", "工作流", "怎么用", "教程"],
+    "cost_change": ["涨价", "降价", "订阅", "额度", "免费", "付费", "成本", "价格"],
+    "privacy_security": ["隐私", "安全", "权限", "泄露", "后门", "漏洞", "审查"],
+    "developer_update": ["API", "SDK", "GitHub", "repo", "release", "benchmark", "开发者", "框架"],
+    "ecosystem_shift": ["退出", "迁移", "转投", "维护者", "开源", "生态", "Project X", "Xray"],
+    "controversy": ["争议", "翻车", "封禁", "下架", "抵制", "大地震"]
+  },
+  "platform_rules": {
+    "xhs_requires": ["普通用户能理解", "有使用/避坑/风险/价格/效率/创作场景", "不是纯 API/论文/benchmark/repo 更新"],
+    "only_x_default": ["API", "SDK", "endpoint", "benchmark", "arxiv", "CUDA", "kernel", "纯 GitHub release", "纯论文"],
+    "safety_boundary": "VPN/proxy/Xray 等内容只写公开项目动态、安全隐私、生态影响和风险提醒，不写配置、节点、绕过教程、购买渠道。"
+  }
+}

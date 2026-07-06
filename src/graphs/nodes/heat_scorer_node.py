@@ -42,9 +42,11 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
             "url": m.url,
             "title": m.title,
             "snippet": m.snippet,
+            "content": (m.content or "")[:800],
             "source": m.source,
             "publish_time": m.publish_time,
             "category": m.category,
+            "extra_data": m.extra_data,
         }
         for m in state.deduplicated_materials
     ]
@@ -72,6 +74,7 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
                     source=m.source,
                     publish_time=m.publish_time,
                     category=m.category,
+                    extra_data=m.extra_data,
                     heat_score=50.0,
                     score_reason=f"LLM 调用失败: {e}",
                 )
@@ -89,10 +92,32 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
             except (TypeError, ValueError):
                 pass
 
+    def _rule_score(m: StandardMaterial) -> float:
+        text = " ".join([m.title or "", m.snippet or "", m.content or "", m.source or "", m.category or ""]).lower()
+        score = 0.0
+        if "watchlist" in (m.source or ""):
+            score = max(score, 58.0)
+        if any(k in text for k in ("xray", "xtls", "v2ray", "vpn", "proxy", "翻墙", "科学上网", "sing-box", "clash", "mihomo")):
+            score = max(score, 55.0)
+        if any(k in text for k in ("退出中国", "俄罗斯", "伊朗", "漏洞", "cve", "泄露", "封锁", "下架", "breaking change")):
+            score += 8.0
+        extra = m.extra_data or {}
+        try:
+            source_signal = float(extra.get("source_signal_score") or 0)
+            source_weight = float(extra.get("source_weight") or 1.0)
+        except (TypeError, ValueError):
+            source_signal = 0.0
+            source_weight = 1.0
+        if source_signal:
+            score = max(score, min(source_signal * source_weight, 85.0))
+        if "个独立信源" in text or "source_count" in text:
+            score += 5.0
+        return min(score, 85.0) if score else 0.0
+
     scored: List[ScoredMaterial] = []
     high = 0
     for m in state.deduplicated_materials:
-        s = score_map.get(m.url, 0.0)
+        s = max(score_map.get(m.url, 0.0), _rule_score(m))
         if s >= 60:
             high += 1
         scored.append(
@@ -104,6 +129,7 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
                 source=m.source,
                 publish_time=m.publish_time,
                 category=m.category,
+                extra_data=m.extra_data,
                 heat_score=s,
                 score_reason=(
                     next((x.get("score_reason", "") for x in score_results if x.get("url") == m.url), "")

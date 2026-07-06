@@ -31,6 +31,7 @@ class StandardMaterial(BaseModel):
     source: str = ""
     publish_time: Optional[str] = None
     category: str = "未分类"
+    extra_data: dict = Field(default_factory=dict, description="采集阶段保留的来源元数据")
 
 
 class ScoredMaterial(BaseModel):
@@ -44,23 +45,33 @@ class ScoredMaterial(BaseModel):
     category: str = "未分类"
     heat_score: float = 0.0
     score_reason: str = ""
+    extra_data: dict = Field(default_factory=dict, description="采集阶段保留的来源元数据")
     related_urls: List[str] = Field(default_factory=list, description="同事件其他来源 URL（聚类后填充）")
     cluster_size: int = 1
 
 
 class TweetDraft(BaseModel):
-    """内容草稿（X + 其他平台通用内容）"""
+    """内容草稿（X + 小红书）"""
     unique_id: str
     url: str
     title: str = ""
     category: str = "未分类"
     heat_score: float = 0.0
     tweet_content: str = ""              # X 平台内容
-    other_title: str = ""                # 小红书/微头条/贴图号通用标题
-    other_content: str = ""              # 小红书/微头条/贴图号通用正文
+    other_title: str = ""                # 小红书标题（历史字段名保留为 other_* 兼容）
+    other_content: str = ""              # 小红书正文（可由人工复用到其他平台）
     other_tags: List[str] = Field(default_factory=list)
-    image_prompt: str = ""               # 配图提示词（仅通用内容需要）
-    platform: str = "X+通用内容"          # 发布平台：X+通用内容 / 仅X
+    image_prompt: str = ""               # 配图提示词（仅小红书内容需要）
+    platform: str = "X+小红书"            # 发布平台：X+小红书 / 仅X
+    content_angle: str = ""               # 内容角度：risk_alert / tool_use_case / ecosystem_shift 等
+    hook_type: str = ""                   # X 首行 hook 类型
+    platform_reason: str = ""             # 平台分流理由
+    x_quality_score: float = 0.0           # X 内容质量分（0-100）
+    xhs_quality_score: float = 0.0         # 小红书内容质量分（0-100，仅X 时为 0）
+    quality_notes: str = ""               # 质量门禁/重写说明
+    source: str = ""                      # 素材来源，便于飞书审核和复盘
+    score_reason: str = ""                # 热度评分理由
+    discovery_reason: str = ""            # 发现原因：watchlist 命中词 / 来源数 / query 等
     # 历史兼容字段：新流程不再写入飞书
     viewpoint: str = ""
     xiaohongshu_title: str = ""
@@ -119,6 +130,7 @@ class GlobalState(BaseModel):
 
     # 落盘
     output_path: str = ""
+    reject_events: List[dict] = Field(default_factory=list, description="内容生成阶段被拒绝/丢弃的素材诊断")
     run_message: str = ""
 
 
@@ -147,6 +159,7 @@ class GraphOutput(BaseModel):
     total_after_dedup: int = 0
     total_tweets: int = 0
     tweet_drafts: List[TweetDraft] = Field(default_factory=list)
+    reject_events: List[dict] = Field(default_factory=list)
     output_path: str = ""
     feishu_table_url: str = ""
     feishu_record_ids: List[str] = Field(default_factory=list)
@@ -269,6 +282,7 @@ class TweetGeneratorOutput(BaseModel):
     tweet_drafts: List[TweetDraft] = Field(default_factory=list)
     total_tweets: int = 0
     other_platform_count: int = 0
+    reject_events: List[dict] = Field(default_factory=list)
 
 
 # ========== 飞书节点 ==========
@@ -301,6 +315,7 @@ class FeishuWriterInput(BaseModel):
     feishu_page_id: str = ""
     is_wiki_embed: bool = False
     feishu_domain: str = "my.feishu.cn"
+    feishu_init_success: bool = False
     write_to_feishu: bool = True
     total_tweets: int = 0
 

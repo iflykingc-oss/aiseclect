@@ -1,0 +1,50 @@
+{
+  "sources": [
+    {
+      "name": "github_repo_watch",
+      "type": "github_repo",
+      "enabled": true,
+      "source_weight": 1.25,
+      "max_results": 24,
+      "repos": [
+        "XTLS/Xray-core",
+        "SagerNet/sing-box",
+        "MetaCubeX/mihomo",
+        "2dust/v2rayN",
+        "v2ray/v2ray-core",
+        "hiddify/hiddify-next",
+        "shadowsocks/shadowsocks-rust",
+        "apernet/hysteria",
+        "modelcontextprotocol/servers",
+        "punkpeye/awesome-mcp-servers",
+        "github/github-mcp-server",
+        "langchain-ai/langgraph",
+        "langchain-ai/langchain",
+        "openai/openai-agents-python",
+        "pydantic/pydantic-ai",
+        "microsoft/autogen",
+        "continuedev/continue",
+        "cline/cline"
+      ]
+    },
+    {
+      "name": "hackernews_watch",
+      "type": "hn_algolia",
+      "enabled": true,
+      "source_weight": 1.15,
+      "max_results": 30,
+      "queries": [
+        "Claude",
+        "Claude Code",
+        "Cursor",
+        "MCP",
+        "AI agent",
+        "OpenAI agents",
+        "LangGraph",
+        "Xray VPN",
+        "V2Ray",
+        "proxy censorship"
+      ]
+    }
+  ]
+}

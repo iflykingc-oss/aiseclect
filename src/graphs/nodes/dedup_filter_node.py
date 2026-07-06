@@ -43,11 +43,8 @@ def dedup_filter_node(state: DedupFilterInput) -> DedupFilterOutput:
         seen.add(key)
         deduplicated.append(mat)
 
-    # 持久化新增的 URL
-    new_keys = [_normalize_url(m.url) for m in deduplicated]
-    state_obj.add(new_keys)
-    state_obj.save()
-
+    # 注意：这里只做过滤，不持久化新增 URL。
+    # URL 只有在成功写入飞书或确认飞书已存在后，才由 feishu_writer 持久化。
     logger.info(f"去重: 原始 {len(state.merged_materials)} / 新增 {len(deduplicated)} / 重复 {duplicates}")
     return DedupFilterOutput(
         deduplicated_materials=deduplicated,

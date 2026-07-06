@@ -26,6 +26,19 @@ def _category_from_raw(raw: RawMaterial) -> str:
     source = (raw.source or "").lower()
     text = f"{source} {raw.title or ''} {raw.snippet or ''}".lower()
 
+    network_terms = (
+        "xray", "project x", "xtls", "v2ray", "vless", "vmess", "reality",
+        "sing-box", "clash", "mihomo", "hysteria", "trojan", "shadowsocks",
+        "vpn", "proxy", "代理", "翻墙", "科学上网", "gfw", "审查", "封锁",
+    )
+    governance_terms = ("维护者", "作者退出", "退出中国", "转投", "俄罗斯", "伊朗", "合规", "治理")
+
+    if any(k in text for k in ("安全", "隐私", "泄露", "后门", "漏洞", "权限", "cve")):
+        return "安全隐私"
+    if any(k in text for k in governance_terms):
+        return "开源治理"
+    if any(k in text for k in network_terms):
+        return "网络工具"
     if "github" in source:
         return "开源项目"
     if "paper" in source or "paper" in extra_category or "arxiv" in text or "论文" in text:
@@ -40,8 +53,6 @@ def _category_from_raw(raw: RawMaterial) -> str:
         return "效率工具"
     if "qbitai" in source or "industry" in extra_category:
         return "行业动态"
-    if any(k in text for k in ("安全", "隐私", "泄露", "后门", "漏洞", "权限")):
-        return "安全隐私"
     if any(k in text for k in ("翻车", "争议", "涨价", "下架", "事故")):
         return "争议事件"
     if any(k in text for k in ("视频", "图片", "图像", "音乐", "多模态", "生成")):
@@ -70,6 +81,7 @@ def material_merge_node(state: MaterialMergeInput) -> MaterialMergeOutput:
                 source=raw.source or "",
                 publish_time=raw.publish_time,
                 category=_category_from_raw(raw),
+                extra_data=raw.extra_data or {},
             )
         )
 

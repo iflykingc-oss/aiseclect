@@ -9,8 +9,10 @@ from __future__ import annotations
 import logging
 import time
 from typing import List
+from urllib.parse import parse_qsl, urlparse, urlunparse
 
 from graphs.state import FeishuWriterInput, FeishuWriterOutput, TweetDraft
+from tools.dedup_state import DedupState
 from tools.feishu_client import FeishuClient
 
 logger = logging.getLogger(__name__)
@@ -28,9 +30,20 @@ def _normalize_platform(platform: str) -> str:
     s = (platform or "").strip().replace(" ", "")
     if s in ("仅X", "仅x", "只发X", "只X", "Xonly", "X-only"):
         return "仅X"
-    if s in ("X+小红书", "X+其他平台", "X+通用", "X+通用内容"):
-        return "X+通用内容"
-    return "X+通用内容" if s else "仅X"
+    if s in ("X+小红书", "X+其他平台", "X+通用", "X+通用内容", "X+小红书内容"):
+        return "X+小红书"
+    logger.warning(f"未知发布平台，按仅X处理: {platform}")
+    return "仅X"
+
+
+def _normalize_url(url: str) -> str:
+    try:
+        u = urlparse(url)
+    except Exception:
+        return url
+    qs = [(k, v) for k, v in parse_qsl(u.query, keep_blank_values=True)
+          if not k.lower().startswith("utm_") and k.lower() not in ("ref", "ref_source")]
+    return urlunparse((u.scheme, u.netloc, u.path.rstrip("/"), u.params, "&".join(f"{k}={v}" for k, v in qs), ""))
 
 
 def _extract_url_value(value) -> str:
@@ -49,7 +62,7 @@ def _existing_links(client: FeishuClient, app_token: str, table_id: str) -> set[
         fields = rec.get("fields") or {}
         url = _extract_url_value(fields.get("链接"))
         if url:
-            links.add(url.strip())
+            links.add(_normalize_url(url.strip()))
     return links
 
 
@@ -58,15 +71,16 @@ def _build_records(drafts: List[TweetDraft], existing_links: set[str] | None = N
     records: List[dict] = []
     seen_links = set(existing_links or set())
     for d in drafts:
-        if d.url in seen_links:
+        dedup_key = _normalize_url(d.url)
+        if dedup_key in seen_links:
             logger.info(f"飞书已存在，跳过: {d.url}")
             continue
-        seen_links.add(d.url)
+        seen_links.add(dedup_key)
         platform = _normalize_platform(d.platform)
-        other_title = d.other_title if platform == "X+通用内容" else ""
-        other_content = d.other_content if platform == "X+通用内容" else ""
-        other_tags = d.other_tags if platform == "X+通用内容" else []
-        image_prompt = d.image_prompt if platform == "X+通用内容" else ""
+        other_title = d.other_title if platform == "X+小红书" else ""
+        other_content = d.other_content if platform == "X+小红书" else ""
+        other_tags = d.other_tags if platform == "X+小红书" else []
+        image_prompt = d.image_prompt if platform == "X+小红书" else ""
         records.append(
             {
                 "fields": {
@@ -76,10 +90,22 @@ def _build_records(drafts: List[TweetDraft], existing_links: set[str] | None = N
                     "分类": d.category,
                     "热度评分": d.heat_score,
                     "推文内容": d.tweet_content,
+                    "小红书标题": other_title,
+                    "小红书内容": other_content,
+                    "小红书标签": ", ".join(other_tags) if other_tags else "",
                     "通用标题": other_title,
                     "通用内容": other_content,
                     "通用标签": ", ".join(other_tags) if other_tags else "",
                     "配图提示词": image_prompt,
+                    "内容角度": d.content_angle,
+                    "Hook类型": d.hook_type,
+                    "平台判断理由": d.platform_reason,
+                    "X质量分": d.x_quality_score,
+                    "小红书质量分": d.xhs_quality_score,
+                    "质量备注": d.quality_notes,
+                    "素材来源": d.source,
+                    "发现原因": d.discovery_reason,
+                    "评分理由": d.score_reason,
                     "发布平台": platform,
                     "处理状态": _normalize_status(d.status),
                     # 审核备注创建时留空，等运营手动填
@@ -92,9 +118,14 @@ def _build_records(drafts: List[TweetDraft], existing_links: set[str] | None = N
 
 def feishu_writer_node(state: FeishuWriterInput) -> FeishuWriterOutput:
     if not state.write_to_feishu:
-        return FeishuWriterOutput(feishu_init_message="飞书写入已禁用")
+        state_obj = DedupState()
+        state_obj.add(_normalize_url(d.url) for d in state.tweet_drafts)
+        state_obj.save()
+        return FeishuWriterOutput(feishu_init_message="飞书写入已禁用，已保存本地去重")
     if not state.tweet_drafts:
         return FeishuWriterOutput(feishu_init_message="无推文草稿，跳过飞书写入")
+    if not state.feishu_init_success:
+        return FeishuWriterOutput(feishu_init_message="飞书初始化失败，跳过飞书写入")
     if not state.feishu_app_token or not state.feishu_table_id:
         return FeishuWriterOutput(
             feishu_init_message="飞书 app_token / table_id 缺失，跳过飞书写入"
@@ -134,6 +165,12 @@ def feishu_writer_node(state: FeishuWriterInput) -> FeishuWriterOutput:
             f"https://{state.feishu_domain}/wiki/{state.feishu_page_id}"
             f"?table={state.feishu_table_id}"
         )
+
+    # 只有确认写入成功，或全部因飞书已有链接而跳过时，才持久化去重。
+    if not records or len(created) >= len(records):
+        state_obj = DedupState()
+        state_obj.add(_normalize_url(d.url) for d in state.tweet_drafts)
+        state_obj.save()
 
     return FeishuWriterOutput(
         feishu_record_ids=record_ids,

@@ -104,6 +104,7 @@ def _assemble_output(result: Any) -> GraphOutput:
         total_after_dedup=total_after_dedup or 0,
         total_tweets=total_tweets,
         tweet_drafts=tweet_drafts if isinstance(tweet_drafts, list) else [],
+        reject_events=state.get("reject_events") if isinstance(state.get("reject_events"), list) else [],
         output_path=state.get("output_path") or "",
         feishu_table_url=state.get("feishu_table_url") or "",
         feishu_record_ids=state.get("feishu_record_ids") or [],
@@ -127,11 +128,11 @@ def _print_summary(out: GraphOutput) -> None:
         for i, t in enumerate(out.tweet_drafts[:3], 1):
             console.print(f"\n[cyan]#{i}[/cyan] [bold]{t.title}[/bold]  (热 {t.heat_score:.0f})")
             console.print(f"  X: {t.tweet_content}")
-            if t.platform == "X+通用内容":
-                console.print(f"  通用内容: {t.other_title} | {t.other_content[:80]}")
+            if t.platform in ("X+小红书", "X+通用内容"):
+                console.print(f"  小红书: {t.other_title} | {t.other_content[:80]}")
                 console.print(f"  配图提示词: {t.image_prompt[:100]}")
             else:
-                console.print("  通用内容: (仅X，未生成)")
+                console.print("  小红书: (仅X，未生成)")
 
 
 async def _run(args: argparse.Namespace) -> GraphOutput:
@@ -152,8 +153,8 @@ async def _run(args: argparse.Namespace) -> GraphOutput:
 
     out = _assemble_output(result)
 
-    if args.write_to_local and out.tweet_drafts:
-        path = write_tweets(out.tweet_drafts)
+    if args.write_to_local and (out.tweet_drafts or out.reject_events):
+        path = write_tweets(out.tweet_drafts, rejects=out.reject_events)
         out.output_path = str(path)
 
     # 关键告警点

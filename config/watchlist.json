@@ -1,0 +1,40 @@
+{
+  "topics": [
+    {
+      "name": "proxy_ecosystem",
+      "enabled": true,
+      "max_results": 12,
+      "queries": [
+        "Xray Project X VPN proxy GitHub release",
+        "Xray-core XTLS Reality update",
+        "V2Ray Xray proxy release",
+        "sing-box proxy GitHub release",
+        "Clash Meta mihomo proxy update",
+        "Hysteria Trojan Shadowsocks proxy release",
+        "VPN proxy censorship GFW developer tools",
+        "翻墙 科学上网 代理 工具 开源 更新",
+        "Xray 作者 退出 中国 俄罗斯 伊朗"
+      ],
+      "keywords": [
+        "xray", "project x", "xtls", "v2ray", "vless", "vmess", "reality",
+        "sing-box", "clash", "mihomo", "hysteria", "trojan", "shadowsocks",
+        "vpn", "proxy", "代理", "翻墙", "科学上网", "gfw", "审查", "封锁",
+        "开源作者", "退出中国", "俄罗斯", "伊朗", "release", "breaking change", "漏洞", "cve"
+      ],
+      "github_query": "xray OR v2ray OR sing-box OR clash OR mihomo OR hysteria OR trojan OR shadowsocks OR vpn OR proxy OR xtls"
+    },
+    {
+      "name": "ai_dev_tools",
+      "enabled": true,
+      "max_results": 8,
+      "queries": [
+        "Claude Code agent workflow GitHub release",
+        "Cursor AI coding agent update",
+        "MCP server AI agent developer tools",
+        "AI coding assistant privacy pricing update"
+      ],
+      "keywords": ["claude code", "cursor", "mcp", "agent", "ai coding", "coding assistant", "developer tools", "隐私", "涨价", "权限"],
+      "github_query": "claude code OR cursor OR mcp OR ai coding agent OR developer tools"
+    }
+  ]
+}

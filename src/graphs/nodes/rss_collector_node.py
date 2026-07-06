@@ -6,7 +6,9 @@ RSS 社区/补充采集
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
 import xml.etree.ElementTree as ET
 from typing import List
@@ -20,6 +22,7 @@ from tools.learnprompt_client import LearnPromptRadarClient
 logger = logging.getLogger(__name__)
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+HN_ENDPOINT = "https://hn.algolia.com/api/v1/search_by_date"
 
 
 def _strip_html(text: str) -> str:
@@ -61,6 +64,90 @@ def _parse_rss(xml_text: str, source_tag: str, limit: int) -> List[RawMaterial]:
                 extra_data={},
             )
         )
+    return materials
+
+
+def _load_sources() -> dict:
+    candidates = [
+        os.path.join(os.getenv("COZE_WORKSPACE_PATH", os.getcwd()), "config/sources.json"),
+        os.path.join(os.getcwd(), "config/sources.json"),
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except (OSError, ValueError) as e:
+                logger.warning(f"sources 读取失败，跳过 HN 采集: {e}")
+                break
+    return {"sources": []}
+
+
+def _enabled_sources(source_type: str) -> List[dict]:
+    cfg = _load_sources()
+    return [s for s in (cfg.get("sources") or []) if s.get("enabled", True) and s.get("type") == source_type]
+
+
+def _fetch_hn(limit: int) -> List[RawMaterial]:
+    materials: List[RawMaterial] = []
+    seen: set[str] = set()
+    for source_cfg in _enabled_sources("hn_algolia"):
+        source_name = str(source_cfg.get("name") or "hackernews")
+        queries = [str(q) for q in (source_cfg.get("queries") or []) if q]
+        max_results = int(source_cfg.get("max_results") or limit)
+        source_weight = float(source_cfg.get("source_weight") or 1.0)
+        count = 0
+        for query in queries:
+            if count >= max_results:
+                break
+            try:
+                resp = requests.get(
+                    HN_ENDPOINT,
+                    params={"query": query, "tags": "story", "hitsPerPage": min(10, max_results)},
+                    timeout=15,
+                    headers={"User-Agent": UA},
+                )
+                if resp.status_code != 200:
+                    logger.warning(f"HN HTTP {resp.status_code}: {query}")
+                    continue
+                data = resp.json()
+            except (requests.RequestException, ValueError) as e:
+                logger.warning(f"HN 网络/解析异常 {query}: {e}")
+                continue
+            for hit in data.get("hits", []) or []:
+                if count >= max_results:
+                    break
+                title = hit.get("title") or hit.get("story_title") or ""
+                url = hit.get("url") or f"https://news.ycombinator.com/item?id={hit.get('objectID')}"
+                if not title or not url or url in seen:
+                    continue
+                seen.add(url)
+                points = int(hit.get("points") or 0)
+                comments = int(hit.get("num_comments") or 0)
+                source_signal_score = min(100.0, points * 0.6 + comments * 1.2)
+                snippet = f"points: {points} | comments: {comments}"
+                materials.append(
+                    RawMaterial(
+                        url=url,
+                        title=title,
+                        snippet=snippet,
+                        content=hit.get("story_text") or "",
+                        source="hackernews",
+                        publish_time=hit.get("created_at"),
+                        extra_data={
+                            "source_name": source_name,
+                            "source_type": "community",
+                            "source_weight": source_weight,
+                            "source_signal_score": source_signal_score,
+                            "query": query,
+                            "points": points,
+                            "comments": comments,
+                            "hn_object_id": hit.get("objectID"),
+                        },
+                    )
+                )
+                count += 1
+        logger.info(f"HN source={source_name}: {count} 条")
     return materials
 
 
@@ -111,14 +198,21 @@ def rss_collector_node(state: RSSCollectorInput) -> RSSCollectorOutput:
             )
         )
 
-    # 源 2: 量子位（已验证 200，国内 AI 媒体头部）
+    # 源 2: Hacker News（社区讨论热度，适合发现开发者圈爆点）
+    for m in _fetch_hn(state.max_per_source):
+        if m.url in seen:
+            continue
+        seen.add(m.url)
+        materials.append(m)
+
+    # 源 3: 量子位（已验证 200，国内 AI 媒体头部）
     for m in _fetch_rss("https://www.qbitai.com/feed", "qbitai", state.max_per_source):
         if m.url in seen:
             continue
         seen.add(m.url)
         materials.append(m)
 
-    # 源 3: 少数派（工具/AI 应用视角）
+    # 源 4: 少数派（工具/AI 应用视角）
     for m in _fetch_rss("https://sspai.com/feed", "sspai", state.max_per_source):
         if m.url in seen:
             continue
