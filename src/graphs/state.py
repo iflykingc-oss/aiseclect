@@ -327,6 +327,7 @@ class FeishuWriterInput(BaseModel):
     feishu_domain: str = "my.feishu.cn"
     feishu_init_success: bool = False
     write_to_feishu: bool = True
+    clear_dedup: bool = False  # True 时跳过飞书表已有 URL 检查
     total_tweets: int = 0
 
 

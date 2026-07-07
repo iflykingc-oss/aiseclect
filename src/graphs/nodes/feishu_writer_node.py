@@ -126,7 +126,12 @@ def feishu_writer_node(state: FeishuWriterInput) -> FeishuWriterOutput:
         return FeishuWriterOutput(feishu_init_message=f"飞书客户端初始化失败: {e}")
 
     try:
-        existing = _existing_links(client, state.feishu_app_token, state.feishu_table_id)
+        if state.clear_dedup:
+            # clear_dedup=True：跳过飞书表 dedup 检查，让新推文强制入库（dedup_state 已被清空）
+            logger.info("clear_dedup=True，跳过飞书表已有链接检查，所有推文强制入库")
+            existing = set()
+        else:
+            existing = _existing_links(client, state.feishu_app_token, state.feishu_table_id)
     except Exception as e:
         logger.warning(f"读取飞书已有链接失败，将继续尝试写入: {e}")
         existing = set()
