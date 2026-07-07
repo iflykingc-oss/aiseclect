@@ -37,11 +37,14 @@ class TavilyResponse:
 
 
 class TavilyClient:
-    def __init__(self, api_key: Optional[str] = None, timeout: int = 30):
+    def __init__(self, api_key: Optional[str] = None, timeout: int = 8):
         self.api_key = api_key or os.getenv("TAVILY_API_KEY", "")
         if not self.api_key:
             logger.warning("TAVILY_API_KEY 未配置，Tavily 搜索将全部返回空结果")
         self.timeout = timeout
+        # 短路：第一次遇到 401/403 后不再重试，避免刷屏 + 阻塞整轮流程
+        self._disabled: bool = False
+        self._disable_reason: str = ""
 
     def search(
         self,
@@ -53,8 +56,8 @@ class TavilyClient:
         days: Optional[int] = None,
         include_raw_content: bool = True,
     ) -> TavilyResponse:
-        """执行一次 Tavily 搜索。失败时返回空 results，不抛异常。"""
-        if not self.api_key:
+        """执行一次 Tavily 搜索。失败时返回空 results，不抛异常。短路机制：第一次 401/403 后整个客户端停用。"""
+        if not self.api_key or self._disabled:
             return TavilyResponse(query=query)
 
         payload = {
@@ -74,6 +77,15 @@ class TavilyClient:
 
         try:
             resp = requests.post(TAVILY_ENDPOINT, json=payload, timeout=self.timeout)
+            if resp.status_code == 401 or resp.status_code == 403:
+                # API key 失效 / 权限不够：立即短路整个 Tavily 调用，后续 query 直接返回空
+                self._disabled = True
+                self._disable_reason = f"HTTP {resp.status_code}"
+                logger.error(
+                    f"Tavily HTTP {resp.status_code}（API key 失效或权限不足），"
+                    f"短路后续所有 Tavily 调用: {resp.text[:150]}"
+                )
+                return TavilyResponse(query=query)
             if resp.status_code != 200:
                 logger.error(f"Tavily HTTP {resp.status_code}: {resp.text[:200]}")
                 return TavilyResponse(query=query)

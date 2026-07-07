@@ -124,7 +124,7 @@ def _normalize_url(url: str) -> str:
 
 def newsnow_collector_node(state: NewsNowCollectorInput) -> NewsNowCollectorOutput:
     source_ids = _parse_source_ids()
-    per_id = max(3, state.max_per_source // 2)  # 18 个 source × 5 条 ≈ 90 条
+    per_id = max(2, state.max_per_source // 3)  # 19 source × 3 条 ≈ 57 条（之前 4 条导致下游过载）
     materials: List[RawMaterial] = []
     seen_urls: set = set()
 

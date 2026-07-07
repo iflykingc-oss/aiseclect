@@ -101,7 +101,23 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
             score = max(score, 55.0)
         if any(k in text for k in ("退出中国", "俄罗斯", "伊朗", "漏洞", "cve", "泄露", "封锁", "下架", "breaking change")):
             score += 8.0
+        # NewsNow 中文大众向 source 加 base 分（之前 GitHub watchlist 占 80%+，
+        # NewsNow 中文热榜素材被打到 0 分进不了高分池，被 LLM 看到的机会很少）
+        newsnow_consumer_ids = {
+            "weibo", "zhihu", "bilibili", "baidu", "douyin", "tieba",
+            "thepaper", "ithome", "sspai", "producthunt", "coolapk",
+        }
         extra = m.extra_data or {}
+        ns_id = str(extra.get("newsnow_source") or "")
+        if ns_id in newsnow_consumer_ids:
+            score = max(score, 62.0)  # 进高分池（≥ 60）的门槛
+        # hackernews / solidot / v2ex / 财经类大众度低一档
+        newsnow_secondary_ids = {
+            "hackernews", "v2ex", "solidot", "cls", "wallstreetcn",
+            "gelonghui", "jin10", "fastbull",
+        }
+        if ns_id in newsnow_secondary_ids:
+            score = max(score, 55.0)
         try:
             source_signal = float(extra.get("source_signal_score") or 0)
             source_weight = float(extra.get("source_weight") or 1.0)

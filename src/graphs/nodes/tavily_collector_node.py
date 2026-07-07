@@ -111,7 +111,7 @@ def _collect_aihot_hot(state: TavilyCollectorInput, seen: set[str]) -> List[RawM
 
 
 def _collect_tavily_watchlist(state: TavilyCollectorInput, seen: set[str]) -> List[RawMaterial]:
-    client = TavilyClient(timeout=20)
+    client = TavilyClient(timeout=8)
     if not client.api_key:
         return []
 
