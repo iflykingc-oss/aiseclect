@@ -181,7 +181,7 @@ async def _run(args: argparse.Namespace) -> GraphOutput:
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="aiseclect flow runner")
-    p.add_argument("--max-per-source", type=int, default=10)
+    p.add_argument("--max-per-source", type=int, default=6)
     p.add_argument("--min-heat-score", type=float, default=30.0)
     p.add_argument("--clear-dedup", action="store_true")
     p.add_argument("--no-feishu", dest="write_to_feishu", action="store_false")

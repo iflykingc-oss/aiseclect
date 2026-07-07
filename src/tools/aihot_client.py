@@ -50,7 +50,7 @@ class AIHotResponse:
 
 
 class AIHotClient:
-    def __init__(self, timeout: int = 30, ua: Optional[str] = None):
+    def __init__(self, timeout: int = 8, ua: Optional[str] = None):
         self.timeout = timeout
         self.ua = ua or os.getenv("AIHOT_USER_AGENT", DEFAULT_UA)
         self._etag_cache_path = Path(
@@ -58,6 +58,10 @@ class AIHotClient:
         )
         self._etag_cache_path.parent.mkdir(parents=True, exist_ok=True)
         self._etag_cache: Dict[str, str] = self._load_etag_cache()
+        # 短路：第一次网络异常（connect timeout / DNS / refused）后停用整个 client，
+        # 后续 3 个 collector 节点（aihot / ainews / tavily）都直接返回空，不再空等 30s × N
+        self._network_disabled: bool = False
+        self._network_disable_reason: str = ""
 
     def _load_etag_cache(self) -> Dict[str, str]:
         if not self._etag_cache_path.exists():
@@ -86,10 +90,18 @@ class AIHotClient:
         headers = {"User-Agent": self.ua}
         if cache_key in self._etag_cache:
             headers["If-None-Match"] = self._etag_cache[cache_key]
+        # 短路：网络挂了直接返回 None，不再耗时
+        if self._network_disabled:
+            return None
         try:
             resp = requests.get(url, params=params, headers=headers, timeout=self.timeout)
         except requests.RequestException as e:
-            logger.error(f"AIHOT 网络异常: {e}")
+            self._network_disabled = True
+            self._network_disable_reason = str(e)[:120]
+            logger.error(
+                f"AIHOT 网络异常（短路后续调用）: {e}；"
+                f"原因: {self._network_disable_reason}"
+            )
             return None
         if resp.status_code == 304:
             logger.debug(f"AIHOT 304: {cache_key}")

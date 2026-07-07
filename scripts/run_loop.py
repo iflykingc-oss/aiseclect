@@ -39,7 +39,7 @@ logger = logging.getLogger("scheduler")
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="aiseclect 定时调度器")
     p.add_argument("--interval-hours", type=float, default=4.0, help="间隔小时数（默认 4）")
-    p.add_argument("--max-per-source", type=int, default=10)
+    p.add_argument("--max-per-source", type=int, default=6)
     p.add_argument("--min-heat-score", type=float, default=30.0)
     p.add_argument("--clear-dedup", action="store_true")
     p.add_argument("--no-feishu", dest="write_to_feishu", action="store_false")
