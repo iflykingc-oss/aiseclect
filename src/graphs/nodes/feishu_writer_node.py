@@ -137,6 +137,10 @@ def feishu_writer_node(state: FeishuWriterInput) -> FeishuWriterOutput:
         existing = set()
 
     records = _build_records(state.tweet_drafts, existing_links=existing)
+    skipped_existing = len(state.tweet_drafts) - len(records)
+    logger.info(
+        f"飞书写入准备: 草稿 {len(state.tweet_drafts)} 条 / 已有或重复跳过 {skipped_existing} 条 / 尝试写入 {len(records)} 条"
+    )
     try:
         created = client.batch_create_records(
             state.feishu_app_token, state.feishu_table_id, records, with_shared_url=True
@@ -170,6 +174,9 @@ def feishu_writer_node(state: FeishuWriterInput) -> FeishuWriterOutput:
         feishu_record_ids=record_ids,
         added_count=len(record_ids),
         feishu_table_url=table_url,
-        feishu_init_message=f"已写入 {len(record_ids)} 条记录",
+        feishu_init_message=(
+            f"草稿 {len(state.tweet_drafts)} 条，跳过已有 {skipped_existing} 条，"
+            f"尝试写入 {len(records)} 条，已写入 {len(record_ids)} 条记录"
+        ),
         total_tweets=len(state.tweet_drafts) or state.total_tweets,
     )

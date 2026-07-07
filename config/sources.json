@@ -4,8 +4,8 @@
       "name": "github_repo_watch",
       "type": "github_repo",
       "enabled": true,
-      "source_weight": 1.25,
-      "max_results": 24,
+      "source_weight": 0.90,
+      "max_results": 16,
       "repos": [
         "XTLS/Xray-core",
         "SagerNet/sing-box",
@@ -31,8 +31,8 @@
       "name": "hackernews_dev",
       "type": "hn_algolia",
       "enabled": true,
-      "source_weight": 1.15,
-      "max_results": 24,
+      "source_weight": 0.95,
+      "max_results": 16,
       "queries": [
         "Claude",
         "Claude Code",
@@ -47,8 +47,8 @@
       "name": "hackernews_consumer",
       "type": "hn_algolia",
       "enabled": true,
-      "source_weight": 1.30,
-      "max_results": 30,
+      "source_weight": 1.50,
+      "max_results": 32,
       "queries": [
         "AI consumer product",
         "AI app launch",
@@ -66,8 +66,8 @@
       "name": "hackernews_industry",
       "type": "hn_algolia",
       "enabled": true,
-      "source_weight": 1.20,
-      "max_results": 24,
+      "source_weight": 0.85,
+      "max_results": 16,
       "queries": [
         "AI funding",
         "AI acquisition",
@@ -77,6 +77,25 @@
         "OpenAI news",
         "Anthropic news",
         "Google DeepMind"
+      ]
+    },
+    {
+      "name": "hackernews_lifestyle",
+      "type": "hn_algolia",
+      "enabled": true,
+      "source_weight": 1.40,
+      "max_results": 20,
+      "queries": [
+        "AI glasses",
+        "AI companion",
+        "AI pet",
+        "smart speaker",
+        "AI translation",
+        "AI health wearable",
+        "self-driving",
+        "AI education kids",
+        "robot vacuum",
+        "AI photo generator"
       ]
     }
   ],

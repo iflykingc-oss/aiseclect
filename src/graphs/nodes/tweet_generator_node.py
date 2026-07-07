@@ -135,6 +135,98 @@ def _make_unique_id() -> str:
     return f"tweet_{int(time.time())}_{random.randint(1000, 9999)}"
 
 
+# ========== 受众桶分类 + 配额挑选 ==========
+# 让大众向（NewsNow/AI 产品/工具）保底进 top 12，技术向（GitHub/watchlist/论文）封顶。
+_GENERAL_CATEGORY_TAGS = (
+    "大众", "视频", "科技产品", "效率工具", "产品发布", "社会新闻", "数码社区",
+    "智能硬件", "AI硬件", "AI陪伴", "AI教育", "AI视频", "AI图片", "AI创作",
+    "生活方式", "消费电子", "普通用户",
+)
+_TECH_CATEGORY_TAGS = ("开源项目", "技术突破", "开发者社区")
+_GENERAL_SOURCE_TAGS = (
+    "newsnow-weibo", "newsnow-zhihu", "newsnow-bilibili", "newsnow-baidu",
+    "newsnow-douyin", "newsnow-tieba", "newsnow-thepaper", "newsnow-producthunt",
+    "newsnow-ithome", "newsnow-sspai", "newsnow-coolapk",
+)
+_TECH_SOURCE_TAGS = ("github", "watchlist", "ainews", "ai-models", "official_ai", "paper")
+
+
+def _categorize_audience(mat: ScoredMaterial) -> str:
+    """把素材分到 general / tech / neutral 三桶。"""
+    cat = mat.category or ""
+    src = (mat.source or "").lower()
+    if any(tag in cat for tag in _GENERAL_CATEGORY_TAGS):
+        return "general"
+    if any(tag in src for tag in _GENERAL_SOURCE_TAGS):
+        return "general"
+    if any(tag in cat for tag in _TECH_CATEGORY_TAGS):
+        return "tech"
+    if any(tag in src for tag in _TECH_SOURCE_TAGS):
+        return "tech"
+    return "neutral"
+
+
+def _balanced_pick(candidates: list, max_tweets: int) -> list:
+    """按受众桶配额挑 top N：general 保底、tech 封顶、不足从中性和其他桶补。"""
+    if max_tweets <= 0:
+        return []
+    if len(candidates) <= max_tweets:
+        return list(candidates)
+
+    general_quota = max(1, round(max_tweets * 0.6))   # 18 → 11 大众保底
+    tech_quota = max(1, round(max_tweets * 0.25))      # 18 → 4 技术封顶
+
+    general = [m for m in candidates if _categorize_audience(m) == "general"]
+    tech = [m for m in candidates if _categorize_audience(m) == "tech"]
+    neutral = [m for m in candidates if _categorize_audience(m) == "neutral"]
+
+    selected: list = []
+    used_urls: set = set()
+
+    def take(bucket: list, n: int) -> None:
+        for m in bucket:
+            if n <= 0 or m.url in used_urls:
+                continue
+            selected.append(m)
+            used_urls.add(m.url)
+            n -= 1
+
+    # 1) general 保底（不够就用 neutral 补，不再借 tech）
+    take(general, general_quota)
+    if sum(1 for x in selected if _categorize_audience(x) == "general") < general_quota:
+        take(neutral, general_quota - sum(1 for x in selected if _categorize_audience(x) == "general"))
+
+    # 2) tech 封顶
+    take(tech, tech_quota)
+
+    # 3) neutral 补到 max_tweets（如果还不够，按 general → tech 顺序借）
+    remaining = max_tweets - len(selected)
+    if remaining > 0:
+        take(neutral, remaining)
+        if len(selected) < max_tweets:
+            take(general, max_tweets - len(selected))
+            if len(selected) < max_tweets:
+                take(tech, max_tweets - len(selected))
+
+    # 4) 还没满就按原排序补
+    if len(selected) < max_tweets:
+        for m in candidates:
+            if m.url in used_urls:
+                continue
+            selected.append(m)
+            used_urls.add(m.url)
+            if len(selected) >= max_tweets:
+                break
+
+    logger.info(
+        f"配额挑选: general={sum(1 for x in selected if _categorize_audience(x) == 'general')} "
+        f"tech={sum(1 for x in selected if _categorize_audience(x) == 'tech')} "
+        f"neutral={sum(1 for x in selected if _categorize_audience(x) == 'neutral')} "
+        f"/ 总 {len(selected)}"
+    )
+    return selected[:max_tweets] if max_tweets > 0 else selected
+
+
 def _chunked(items: list, size: int) -> list:
     return [items[i : i + size] for i in range(0, len(items), size)]
 
@@ -424,15 +516,23 @@ def _score_xhs_quality(data: dict, strategy: Dict[str, Any]) -> Tuple[float, str
         score += 25
     else:
         notes.append("标题点击/长度不足")
-    if any(t in title + content for t in tags[:4]) or any(k in title + content for k in ("AI", "工具", "效率", "隐私", "避坑", "办公", "创作")):
+    consumer_terms = (
+        "智能眼镜", "耳机", "音箱", "家居", "陪伴", "教育", "学习", "翻译", "视频", "图片",
+        "拍照", "健康", "孩子", "家长", "出差", "生活", "普通人", "新手",
+    )
+    practical_terms = (
+        "怎么", "可以", "建议", "注意", "风险", "避免", "判断", "避坑", "用来", "场景",
+        "适用", "价格", "权限", "隐私", "上手", "省时", "省钱", "效果", "体验", "选择", "不适合",
+    )
+    if any(t in title + content for t in tags[:4]) or any(k in title + content for k in ("AI", "工具", "效率", "隐私", "避坑", "办公", "创作") + consumer_terms):
         score += 20
     else:
         notes.append("搜索关键词弱")
-    if any(k in content for k in ("普通人", "打工人", "创作者", "创业者", "学生", "开发者", "适合")):
+    if any(k in content for k in ("普通人", "打工人", "创作者", "创业者", "学生", "开发者", "适合") + consumer_terms):
         score += 20
     else:
         notes.append("场景/人群弱")
-    if sum(1 for s in ("怎么", "可以", "建议", "注意", "风险", "避免", "判断", "避坑", "用来") if s in content) >= 2:
+    if sum(1 for s in practical_terms if s in content) >= 2:
         score += 20
     else:
         notes.append("实用/避坑弱")
@@ -514,7 +614,13 @@ def _quality_check_other(data: dict) -> Tuple[bool, str]:
         return False, f"小红书标签数 {len(tags)} 不在 3-8"
     if len(image_prompt) < 30 or len(image_prompt) > 220:
         return False, f"配图提示词 {len(image_prompt)} 字不在 30-220"
-    signals = ["适合", "影响", "可以", "建议", "注意", "风险", "用来", "帮助", "避免", "普通人", "打工人", "创作者", "创业者", "怎么", "判断", "避坑"]
+    signals = [
+        "适合", "影响", "可以", "建议", "注意", "风险", "用来", "帮助", "避免", "普通人",
+        "打工人", "创作者", "创业者", "怎么", "判断", "避坑", "智能眼镜", "耳机", "音箱",
+        "家居", "陪伴", "教育", "学习", "翻译", "视频", "图片", "拍照", "健康", "孩子", "家长",
+        "出差", "生活", "新手", "场景", "适用", "价格", "权限", "隐私", "上手", "省时",
+        "省钱", "效果", "体验", "选择", "不适合",
+    ]
     if sum(1 for s in signals if s in content) < 2:
         return False, "小红书正文缺少影响/使用/避坑信息"
     return True, "ok"
@@ -537,6 +643,17 @@ def _reject_event(mat: ScoredMaterial, stage: str, reason: str, data: dict | Non
         "tweet_preview": ((data or {}).get("tweet_content") or "")[:160],
         "xhs_title": (data or {}).get("other_title") or (data or {}).get("xiaohongshu_title"),
     }
+
+
+def _downgrade_to_only_x(data: dict) -> dict:
+    """保留可用 X 内容，清空小红书字段。"""
+    downgraded = dict(data)
+    downgraded["platform"] = PLATFORM_ONLY_X
+    downgraded["other_title"] = ""
+    downgraded["other_content"] = ""
+    downgraded["other_tags"] = []
+    downgraded["image_prompt"] = ""
+    return downgraded
 
 
 def _build_draft(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) -> Tuple[TweetDraft | None, str]:
@@ -580,7 +697,7 @@ def _build_draft(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) -> T
         if not ok_other or xhs_quality_score < xhs_pass_score:
             reason = reason_other if not ok_other else f"小红书质量分 {xhs_quality_score:.0f} < {xhs_pass_score:.0f}: {xhs_quality_notes}"
             logger.debug(f"小红书内容门禁拒: {mat.title[:50]} | {reason}")
-            return None, reason
+            return None, f"xhs_failed: {reason}"
     else:
         other_title = ""
         other_content = ""
@@ -620,9 +737,9 @@ def tweet_generator_node(state: TweetGeneratorInput) -> TweetGeneratorOutput:
         key=lambda m: (m.heat_score, m.cluster_size, len((m.content or "") + (m.snippet or ""))),
         reverse=True,
     )
-    max_tweets = int(os.getenv("AISECLECT_MAX_TWEETS", "12"))
+    max_tweets = int(getattr(state, "max_tweets", 18) or 18)
     if max_tweets > 0:
-        candidates = candidates[:max_tweets]
+        candidates = _balanced_pick(candidates, max_tweets)
     if not candidates:
         logger.warning(f"无素材通过 min_heat_score={state.min_heat_score} 过滤")
         return TweetGeneratorOutput(tweet_drafts=[], total_tweets=0, other_platform_count=0)
@@ -682,18 +799,42 @@ def tweet_generator_node(state: TweetGeneratorInput) -> TweetGeneratorOutput:
         draft, reject_reason = _build_draft(mat, data, strategy)
         if draft is None:
             repair_cfg = {**cfg}
-            repair_cfg["up"] = (
-                "【质量修复】上一版没有通过质量门禁。请只根据素材重写这一条，重点修复 X 首行 hook、具体事实、影响/风险/机会；"
-                "如果适合小红书，再写小红书；不适合就 platform=仅X。只返回 JSON 数组。\n\n"
-                + json.dumps([_material_payload(mat, persona_assignments)], ensure_ascii=False, indent=2)
-            )
+            if reject_reason.startswith("xhs_failed:"):
+                repair_cfg["up"] = (
+                    "【小红书专项修复】上一版 X 内容可用，但小红书标题/正文/标签/配图提示词没有通过门禁。"
+                    "请保留素材事实和 X 内容方向，重点重写小红书字段：标题 8-30 字，正文 120-450 字，"
+                    "讲清普通用户/打工人/创作者/创业者谁受影响、怎么用或怎么避坑，标签 3-8 个，配图提示词 30-220 字。"
+                    "只返回 JSON 数组。\n\n"
+                    + json.dumps([_material_payload(mat, persona_assignments)], ensure_ascii=False, indent=2)
+                )
+            else:
+                repair_cfg["up"] = (
+                    "【质量修复】上一版没有通过质量门禁。请只根据素材重写这一条，重点修复 X 首行 hook、具体事实、影响/风险/机会；"
+                    "如果适合小红书，再写小红书；不适合就 platform=仅X。只返回 JSON 数组。\n\n"
+                    + json.dumps([_material_payload(mat, persona_assignments)], ensure_ascii=False, indent=2)
+                )
             repaired = _call_llm_once(llm_cfg, repair_cfg, [mat], persona_assignments)
             if repaired:
                 draft, repair_reason = _build_draft(mat, repaired[0], strategy)
-                if draft is None:
+                if draft is None and reject_reason.startswith("xhs_failed:"):
+                    draft, downgrade_reason = _build_draft(mat, _downgrade_to_only_x(data), strategy)
+                    if draft is None:
+                        reject_reason = f"首次失败: {reject_reason}; 小红书修复后失败: {repair_reason}; 降级仅X失败: {downgrade_reason}"
+                    else:
+                        draft.quality_notes = f"{draft.quality_notes} | 小红书修复失败，已降级仅X: {repair_reason}"
+                        draft.platform_reason = "小红书质量未达标，保留 X 草稿待审核"
+                elif draft is None:
                     reject_reason = f"首次失败: {reject_reason}; 修复后失败: {repair_reason}"
             else:
-                reject_reason = f"首次失败: {reject_reason}; 修复调用无结果"
+                if reject_reason.startswith("xhs_failed:"):
+                    draft, downgrade_reason = _build_draft(mat, _downgrade_to_only_x(data), strategy)
+                    if draft is None:
+                        reject_reason = f"首次失败: {reject_reason}; 小红书修复调用无结果; 降级仅X失败: {downgrade_reason}"
+                    else:
+                        draft.quality_notes = f"{draft.quality_notes} | 小红书修复无结果，已降级仅X"
+                        draft.platform_reason = "小红书质量未达标，保留 X 草稿待审核"
+                else:
+                    reject_reason = f"首次失败: {reject_reason}; 修复调用无结果"
         if draft is None:
             dropped_quality += 1
             reject_events.append(_reject_event(mat, "quality_rejected", reject_reason, data))

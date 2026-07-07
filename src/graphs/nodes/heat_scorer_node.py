@@ -23,6 +23,41 @@ from tools.llm import (
 logger = logging.getLogger(__name__)
 
 
+# 受众桶打分偏置：让大众向（NewsNow/产品/热搜）更容易进 top 12，技术向（GitHub/watchlist/论文）封顶
+AUDIENCE_BIAS = {
+    "general": 10.0,
+    "tech": -8.0,
+    "neutral": 0.0,
+}
+CATEGORY_TO_BUCKET = {
+    "大众热搜": "general", "大众讨论": "general", "视频热搜": "general",
+    "社区热议": "general", "社会新闻": "general", "科技产品": "general",
+    "效率工具": "general", "产品发布": "general", "数码社区": "general",
+    "开源项目": "tech", "技术突破": "tech", "开发者社区": "tech",
+    "科技资讯": "tech",
+}
+GENERAL_SOURCE_TAGS = (
+    "newsnow-weibo", "newsnow-zhihu", "newsnow-bilibili", "newsnow-baidu",
+    "newsnow-douyin", "newsnow-tieba", "newsnow-thepaper", "newsnow-producthunt",
+    "newsnow-ithome", "newsnow-sspai", "newsnow-coolapk",
+)
+TECH_SOURCE_TAGS = ("github", "watchlist", "ainews", "ai-models", "official_ai")
+
+
+def _audience_bias(category: Optional[str], source: Optional[str]) -> float:
+    """按 category 命中桶；未命中按 source 前缀判断；返回偏置分（可正可负）。"""
+    bucket = CATEGORY_TO_BUCKET.get(category or "")
+    if not bucket:
+        src = (source or "").lower()
+        if any(tag in src for tag in GENERAL_SOURCE_TAGS):
+            bucket = "general"
+        elif any(tag in src for tag in TECH_SOURCE_TAGS):
+            bucket = "tech"
+        else:
+            bucket = "neutral"
+    return AUDIENCE_BIAS.get(bucket, 0.0)
+
+
 def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
     if not state.deduplicated_materials:
         return HeatScorerOutput(scored_materials=[], high_score_count=0)
@@ -52,45 +87,6 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
     ]
     materials_json = json.dumps(materials_data, ensure_ascii=False, indent=2)
     user_prompt = Template(cfg.get("up", "")).render(materials_json=materials_json)
-
-    # 调 LLM（失败则降级）
-    try:
-        model = build_chat_model(llm_cfg)
-        from langchain_core.messages import SystemMessage, HumanMessage
-
-        messages = [SystemMessage(content=cfg.get("sp", "")), HumanMessage(content=user_prompt)]
-        resp = invoke_with_retry(model, messages)
-        text = extract_text(resp.content)
-        score_results = extract_json_array(text)
-    except Exception as e:
-        logger.error(f"热度打分失败，降级为统一 50 分: {e}")
-        return HeatScorerOutput(
-            scored_materials=[
-                ScoredMaterial(
-                    url=m.url,
-                    title=m.title,
-                    snippet=m.snippet,
-                    content=m.content,
-                    source=m.source,
-                    publish_time=m.publish_time,
-                    category=m.category,
-                    extra_data=m.extra_data,
-                    heat_score=50.0,
-                    score_reason=f"LLM 调用失败: {e}",
-                )
-                for m in state.deduplicated_materials
-            ],
-            high_score_count=len(state.deduplicated_materials),
-        )
-
-    # 关联 url -> score
-    score_map = {}
-    for item in score_results:
-        if isinstance(item, dict) and item.get("url"):
-            try:
-                score_map[item["url"]] = float(item.get("heat_score", 0) or 0)
-            except (TypeError, ValueError):
-                pass
 
     def _rule_score(m: StandardMaterial) -> float:
         text = " ".join([m.title or "", m.snippet or "", m.content or "", m.source or "", m.category or ""]).lower()
@@ -130,10 +126,59 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
             score += 5.0
         return min(score, 85.0) if score else 0.0
 
+    def _final_score(llm_score: float, m: StandardMaterial) -> float:
+        base = max(llm_score, _rule_score(m))
+        return max(0.0, min(100.0, base + _audience_bias(m.category, m.source))) if base else 0.0
+
+    def _fallback_score(m: StandardMaterial) -> float:
+        base = max(50.0, _rule_score(m))
+        return max(0.0, min(100.0, base + _audience_bias(m.category, m.source)))
+
+    # 调 LLM（失败则降级）
+    try:
+        model = build_chat_model(llm_cfg)
+        from langchain_core.messages import SystemMessage, HumanMessage
+
+        messages = [SystemMessage(content=cfg.get("sp", "")), HumanMessage(content=user_prompt)]
+        resp = invoke_with_retry(model, messages)
+        text = extract_text(resp.content)
+        score_results = extract_json_array(text)
+    except Exception as e:
+        logger.error(f"热度打分失败，按规则分降级: {e}")
+        scored = [
+            ScoredMaterial(
+                url=m.url,
+                title=m.title,
+                snippet=m.snippet,
+                content=m.content,
+                source=m.source,
+                publish_time=m.publish_time,
+                category=m.category,
+                extra_data=m.extra_data,
+                heat_score=_fallback_score(m),
+                score_reason=f"LLM 调用失败，使用规则分: {e}",
+            )
+            for m in state.deduplicated_materials
+        ]
+        return HeatScorerOutput(
+            scored_materials=scored,
+            high_score_count=sum(1 for m in scored if m.heat_score >= 60),
+            total_after_score=len(scored),
+        )
+
+    # 关联 url -> score
+    score_map = {}
+    for item in score_results:
+        if isinstance(item, dict) and item.get("url"):
+            try:
+                score_map[item["url"]] = float(item.get("heat_score", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+
     scored: List[ScoredMaterial] = []
     high = 0
     for m in state.deduplicated_materials:
-        s = max(score_map.get(m.url, 0.0), _rule_score(m))
+        s = _final_score(score_map.get(m.url, 0.0), m)
         if s >= 60:
             high += 1
         scored.append(

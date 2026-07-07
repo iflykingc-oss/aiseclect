@@ -3,7 +3,7 @@
     {
       "name": "proxy_ecosystem",
       "enabled": true,
-      "max_results": 12,
+      "max_results": 6,
       "queries": [
         "Xray Project X VPN proxy GitHub release",
         "Xray-core XTLS Reality update",
@@ -26,7 +26,7 @@
     {
       "name": "ai_dev_tools",
       "enabled": true,
-      "max_results": 8,
+      "max_results": 6,
       "queries": [
         "Claude Code agent workflow GitHub release",
         "Cursor AI coding agent update",
@@ -52,6 +52,40 @@
       ],
       "keywords": ["chatgpt", "claude", "gemini", "sora", "notebooklm", "perplexity", "elevenlabs", "豆包", "通义", "可灵", "剪映", "suno", "udio", "consumer", "consumer app"],
       "github_query": "chatgpt OR claude-app OR gemini-app OR sora OR notebooklm OR perplexity OR elevenlabs OR suno OR udio OR 豆包 OR 通义 OR 可灵 OR 剪映"
+    },
+    {
+      "name": "ai_lifestyle",
+      "enabled": true,
+      "max_results": 10,
+      "queries": [
+        "AI 智能眼镜 Ray-Ban Meta 评测",
+        "AI 陪伴 玩具 CES 发布",
+        "AI 宠物 机器人",
+        "AI 健康 监测 可穿戴",
+        "AI 翻译耳机 出国",
+        "AI 语音助手 智能音箱",
+        "Sora 可灵 即梦 AI 视频 普通人",
+        "AI 头像 写真 朋友圈"
+      ],
+      "keywords": ["智能眼镜", "陪伴", "玩具", "健康", "音箱", "翻译", "AI头像", "写真", "朋友圈", "可灵", "即梦", "机器人", "宠物", "可穿戴", "CES", "智能助手"],
+      "github_query": "ai-glasses OR ai-companion OR smart-speaker OR ai-headphones OR ai-pet OR ai-translator OR ai-health OR ai-toy"
+    },
+    {
+      "name": "ai_creator_general",
+      "enabled": true,
+      "max_results": 8,
+      "queries": [
+        "AI 短视频 普通人 教程",
+        "AI 头像生成 免费",
+        "AI 写公众号 一键",
+        "AI 修图 普通用户",
+        "AI PPT 工具 打工人",
+        "可灵 即梦 普通人 作品",
+        "Midjourney 入门",
+        "Suno 翻唱 教程"
+      ],
+      "keywords": ["普通人", "教程", "免费", "小白", "入门", "一键", "朋友圈", "公众号", "短视频", "翻唱", "修图", "PPT", "打工人"],
+      "github_query": "ai-video-generator OR ai-ppt OR suno OR midjourney-bot OR ai-photo-enhancer OR ai-avatar OR ai-pptx"
     }
   ]
 }

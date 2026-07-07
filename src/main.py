@@ -59,6 +59,7 @@ def _build_input(args: argparse.Namespace) -> GraphInput:
         "is_wiki_embed": not args.no_wiki,
         "max_per_source": args.max_per_source,
         "min_heat_score": args.min_heat_score,
+        "max_tweets": args.max_tweets,
         "clear_dedup": args.clear_dedup,
         "write_to_feishu": args.write_to_feishu,
         "write_to_local": args.write_to_local,
@@ -183,6 +184,7 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="aiseclect flow runner")
     p.add_argument("--max-per-source", type=int, default=6)
     p.add_argument("--min-heat-score", type=float, default=30.0)
+    p.add_argument("--max-tweets", type=int, default=int(os.getenv("AISECLECT_MAX_TWEETS", "18")))
     p.add_argument("--clear-dedup", action="store_true")
     p.add_argument("--no-feishu", dest="write_to_feishu", action="store_false")
     p.add_argument("--no-local", dest="write_to_local", action="store_false")
