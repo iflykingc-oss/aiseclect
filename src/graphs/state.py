@@ -105,6 +105,7 @@ class GlobalState(BaseModel):
     rss_materials: List[RawMaterial] = Field(default_factory=list)
     tavily_materials: List[RawMaterial] = Field(default_factory=list)
     github_materials: List[RawMaterial] = Field(default_factory=list)
+    newsnow_materials: List[RawMaterial] = Field(default_factory=list)
 
     # 中间结果
     merged_materials: List[StandardMaterial] = Field(default_factory=list)
@@ -208,12 +209,21 @@ class GitHubCollectorOutput(BaseModel):
     github_materials: List[RawMaterial] = Field(default_factory=list)
 
 
+class NewsNowCollectorInput(BaseModel):
+    max_per_source: int = 10
+
+
+class NewsNowCollectorOutput(BaseModel):
+    newsnow_materials: List[RawMaterial] = Field(default_factory=list)
+
+
 class MaterialMergeInput(BaseModel):
     aihot_materials: List[RawMaterial] = Field(default_factory=list)
     ainews_materials: List[RawMaterial] = Field(default_factory=list)
     rss_materials: List[RawMaterial] = Field(default_factory=list)
     tavily_materials: List[RawMaterial] = Field(default_factory=list)
     github_materials: List[RawMaterial] = Field(default_factory=list)
+    newsnow_materials: List[RawMaterial] = Field(default_factory=list)
 
 
 class MaterialMergeOutput(BaseModel):

@@ -1,5 +1,6 @@
 """
-素材合并节点 - 5 路 → 标准化列表
+素材合并节点 - 6 路 → 标准化列表
+- aihot / ainews / rss / tavily / github / newsnow
 """
 from __future__ import annotations
 
@@ -25,6 +26,34 @@ def _category_from_raw(raw: RawMaterial) -> str:
     extra_category = str((raw.extra_data or {}).get("category") or "").lower()
     source = (raw.source or "").lower()
     text = f"{source} {raw.title or ''} {raw.snippet or ''}".lower()
+
+    # NewsNow 已经在 extra_data 里带了 category，直接用（中文大众向分类最准）
+    if "newsnow" in source and (raw.extra_data or {}).get("newsnow_source"):
+        ns = (raw.extra_data or {}).get("newsnow_source")
+        # 中文分类映射
+        newsnow_category_map = {
+            "weibo": "大众热搜",
+            "zhihu": "大众讨论",
+            "bilibili": "视频热搜",
+            "baidu": "大众热搜",
+            "douyin": "视频热搜",
+            "tieba": "社区热议",
+            "thepaper": "社会新闻",
+            "ithome": "科技产品",
+            "sspai": "效率工具",
+            "producthunt": "产品发布",
+            "hackernews": "开发者社区",
+            "v2ex": "开发者社区",
+            "solidot": "科技资讯",
+            "cls": "财经资讯",
+            "wallstreetcn": "财经资讯",
+            "gelonghui": "财经资讯",
+            "jin10": "财经资讯",
+            "fastbull": "财经资讯",
+            "coolapk": "数码社区",
+        }
+        if ns in newsnow_category_map:
+            return newsnow_category_map[ns]
 
     network_terms = (
         "xray", "project x", "xtls", "v2ray", "vless", "vmess", "reality",
@@ -67,6 +96,7 @@ def material_merge_node(state: MaterialMergeInput) -> MaterialMergeOutput:
     all_materials.extend(state.rss_materials)
     all_materials.extend(state.tavily_materials)
     all_materials.extend(state.github_materials)
+    all_materials.extend(state.newsnow_materials)
 
     merged: List[StandardMaterial] = []
     for raw in all_materials:

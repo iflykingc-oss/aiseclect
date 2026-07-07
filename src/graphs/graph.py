@@ -22,6 +22,8 @@ from graphs.state import (
     TavilyCollectorOutput,
     GitHubCollectorInput,
     GitHubCollectorOutput,
+    NewsNowCollectorInput,
+    NewsNowCollectorOutput,
     MaterialMergeInput,
     MaterialMergeOutput,
     DedupFilterInput,
@@ -44,6 +46,7 @@ from graphs.nodes.ainews_collector_node import ainews_collector_node
 from graphs.nodes.rss_collector_node import rss_collector_node
 from graphs.nodes.tavily_collector_node import tavily_collector_node
 from graphs.nodes.github_collector_node import github_collector_node
+from graphs.nodes.newsnow_collector_node import newsnow_collector_node
 from graphs.nodes.material_merge_node import material_merge_node
 from graphs.nodes.dedup_filter_node import dedup_filter_node
 from graphs.nodes.heat_scorer_node import heat_scorer_node
@@ -63,6 +66,7 @@ def _select(state: GlobalState, key: str):
         "rss_collector": RSSCollectorInput,
         "tavily_collector": TavilyCollectorInput,
         "github_collector": GitHubCollectorInput,
+        "newsnow_collector": NewsNowCollectorInput,
         "material_merge": MaterialMergeInput,
         "dedup_filter": DedupFilterInput,
         "heat_scorer": HeatScorerInput,
@@ -101,6 +105,7 @@ builder.add_node("ainews_collector", _wrap("ainews_collector", ainews_collector_
 builder.add_node("rss_collector", _wrap("rss_collector", rss_collector_node))
 builder.add_node("tavily_collector", _wrap("tavily_collector", tavily_collector_node))
 builder.add_node("github_collector", _wrap("github_collector", github_collector_node))
+builder.add_node("newsnow_collector", _wrap("newsnow_collector", newsnow_collector_node))
 builder.add_node("material_merge", _wrap("material_merge", material_merge_node))
 builder.add_node("dedup_filter", _wrap("dedup_filter", dedup_filter_node))
 builder.add_node("heat_scorer", _wrap("heat_scorer", heat_scorer_node))
@@ -117,9 +122,10 @@ builder.add_edge("feishu_table_init", "ainews_collector")
 builder.add_edge("feishu_table_init", "rss_collector")
 builder.add_edge("feishu_table_init", "tavily_collector")
 builder.add_edge("feishu_table_init", "github_collector")
+builder.add_edge("feishu_table_init", "newsnow_collector")
 
 builder.add_edge(
-    ["aihot_collector", "ainews_collector", "rss_collector", "tavily_collector", "github_collector"],
+    ["aihot_collector", "ainews_collector", "rss_collector", "tavily_collector", "github_collector", "newsnow_collector"],
     "material_merge",
 )
 

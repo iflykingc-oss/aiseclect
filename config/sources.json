@@ -28,11 +28,11 @@
       ]
     },
     {
-      "name": "hackernews_watch",
+      "name": "hackernews_dev",
       "type": "hn_algolia",
       "enabled": true,
       "source_weight": 1.15,
-      "max_results": 30,
+      "max_results": 24,
       "queries": [
         "Claude",
         "Claude Code",
@@ -40,11 +40,65 @@
         "MCP",
         "AI agent",
         "OpenAI agents",
-        "LangGraph",
-        "Xray VPN",
-        "V2Ray",
-        "proxy censorship"
+        "LangGraph"
+      ]
+    },
+    {
+      "name": "hackernews_consumer",
+      "type": "hn_algolia",
+      "enabled": true,
+      "source_weight": 1.30,
+      "max_results": 30,
+      "queries": [
+        "AI consumer product",
+        "AI app launch",
+        "ChatGPT",
+        "Gemini app",
+        "Sora",
+        "NotebookLM",
+        "ElevenLabs",
+        "Perplexity",
+        "Anthropic consumer",
+        "OpenAI consumer"
+      ]
+    },
+    {
+      "name": "hackernews_industry",
+      "type": "hn_algolia",
+      "enabled": true,
+      "source_weight": 1.20,
+      "max_results": 24,
+      "queries": [
+        "AI funding",
+        "AI acquisition",
+        "AI regulation",
+        "AI lawsuit",
+        "AI safety incident",
+        "OpenAI news",
+        "Anthropic news",
+        "Google DeepMind"
       ]
     }
+  ],
+  "newsnow_source_ids": [
+    "weibo",
+    "zhihu",
+    "bilibili",
+    "baidu",
+    "douyin",
+    "tieba",
+    "thepaper",
+    "ithome",
+    "sspai",
+    "producthunt",
+    "hackernews",
+    "v2ex",
+    "solidot",
+    "cls",
+    "wallstreetcn",
+    "gelonghui",
+    "jin10",
+    "fastbull",
+    "coolapk"
   ]
 }

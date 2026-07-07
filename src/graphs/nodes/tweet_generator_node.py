@@ -49,10 +49,16 @@ DEFAULT_STRATEGY: Dict[str, Any] = {
     "angles": {},
 }
 
-# 禁用词（命中即拒，与 prompt 同步）
-BANNED_PATTERNS = [
+# 禁用词分两层：
+# - HARD_BANNED：命中即拒（hashtag、纯营销词、个人情绪化表达）
+# - SOFT_BANNED：命中只扣分（AI 套话、营销词、行业黑话）—— 避免误杀有判断力的圈层内容
+HARD_BANNED_PATTERNS = [
     re.compile(r"#\w+"),  # hashtag
     re.compile(r"重磅|史诗|颠覆|天花板|神器|全民必备|彻底革新|震撼|惊艳"),
+    re.compile(r"我个人认为|我的判断是|让我深感|让我震撼"),
+]
+
+SOFT_BANNED_PATTERNS = [
     re.compile(r"赋能|闭环|打法|矩阵|心智|调性|底层逻辑|维度|拐点"),
     # AI 高频句式
     re.compile(r"本质上|说白了|说穿了|归根结底|换句话说|值得注意的是"),
@@ -61,25 +67,36 @@ BANNED_PATTERNS = [
     re.compile(r"对\w+来说[，,]这"),
     re.compile(r"未来已来|时代变了|我们拭目以待|未来可期"),
     re.compile(r"预示着|揭开了[.的]*序幕|分水岭|转折点"),
-    re.compile(r"我个人认为|我的判断是|让我深感|让我震撼"),
     re.compile(r"不容错过|值得深思|值得收藏"),
 ]
 
-# 明显不适合小红书的硬技术素材：即使 LLM 写了小红书内容，也强制仅X。
+# 兼容别名：旧代码和外部模块可能引用 BANNED_PATTERNS
+BANNED_PATTERNS = HARD_BANNED_PATTERNS + SOFT_BANNED_PATTERNS
+
+# 不适合小红书的硬技术素材：命中且不命中 XHS_FRIENDLY_PATTERNS 时强制仅X。
 HARD_ONLY_X_PATTERNS = [
     re.compile(r"\b(API|SDK|endpoint|migration|deprecation|deprecated|benchmark|CUDA|kernel|compiler)\b", re.I),
     re.compile(r"arxiv|预印本|基准|评测榜|训练技巧|微调|推理框架|端点|迁移|退役|废弃", re.I),
     re.compile(r"\b(Snowflake|Databricks|Salesforce|Kubernetes|K8s)\b", re.I),
 ]
 
+# 软性仅X：只对真正只服务学术/研究读者的素材生效。
+# 注意：github / release / repo / CLI 这类词在面向开发者的工具更新里太常见，
+# 不能一刀切，否则所有 GitHub 来源都被踢出小红书。
 SOFT_ONLY_X_PATTERNS = [
-    re.compile(r"paper|论文|repo|repository|github|release|开源库|命令行|cli", re.I),
+    re.compile(r"paper|论文|开源库", re.I),
+]
+
+# 网络工具 / VPN / proxy 边界：命中这些词的素材小红书只能写公开项目动态、生态与安全，
+# 不能写配置、节点、教程。
+PROXY_BOUNDARY_PATTERNS = [
+    re.compile(r"xray|v2ray|xtls|vless|vmess|reality|sing-box|clash|mihomo|hysteria|trojan|shadowsocks|vpn|proxy|翻墙|科学上网|GFW|审查|封锁", re.I),
 ]
 
 XHS_FRIENDLY_PATTERNS = [
     re.compile(r"工具|产品|硬件|眼镜|手机|耳机|视频|图片|图像|音乐|生成|效率|办公|创作者|打工人|隐私|安全|泄露|后门|翻车|涨价|浏览器|搜索|助手|学生|学习|教育|普通人|职场|截图|PDF", re.I),
     re.compile(r"怎么用|如何用|避坑|谁受影响|影响谁|适合谁|价格|权限|风险|教程|案例|工作流|提效", re.I),
-    re.compile(r"\b(ChatGPT|Gemini|Sora|Suno|Notion|豆包|元宝|可灵|剪映)\b", re.I),
+    re.compile(r"\b(ChatGPT|Claude|Gemini|Sora|Suno|Cursor|Notion|LLM|Agent|豆包|元宝|可灵|剪映)\b", re.I),
 ]
 
 IMPACT_PATTERNS = [
@@ -231,8 +248,8 @@ def _normalize_platform(raw, data: dict | None = None) -> str:
         return PLATFORM_GENERAL
     if not s:
         return PLATFORM_GENERAL if _has_other_content(data) else PLATFORM_ONLY_X
-    logger.debug(f"未知 platform 值: {raw}，保守归为仅X")
-    return PLATFORM_ONLY_X
+    logger.debug(f"未知 platform 值: {raw}，按小红书内容推断")
+    return PLATFORM_GENERAL if _has_other_content(data) else PLATFORM_ONLY_X
 
 
 def _normalize_generated_payload(data: dict) -> dict:
@@ -269,12 +286,21 @@ def _material_text(mat: ScoredMaterial) -> str:
 def _force_only_x(mat: ScoredMaterial) -> bool:
     text = _material_text(mat)
     is_xhs_friendly = any(p.search(text) for p in XHS_FRIENDLY_PATTERNS)
-    if any(p.search(text) for p in HARD_ONLY_X_PATTERNS):
+    is_proxy_boundary = any(p.search(text) for p in PROXY_BOUNDARY_PATTERNS)
+
+    # 硬技术关键词 + 完全无普通用户场景 → 强制仅X（恢复 is_xhs_friendly 豁免）
+    if any(p.search(text) for p in HARD_ONLY_X_PATTERNS) and not is_xhs_friendly:
         return True
+    # 论文/学术 → 没有明确使用价值转译，仅X
     if any(p.search(text) for p in SOFT_ONLY_X_PATTERNS) and not is_xhs_friendly:
         return True
-    # GitHub / watchlist 中没有明确普通用户场景的，默认仅X。
-    if any(k in (mat.source or "") for k in ("github", "watchlist")) and not is_xhs_friendly:
+    # GitHub / watchlist 来源 + 命中网络工具边界 + 完全无普通用户场景 → 仅X
+    # 关键是：只要素材里有任何「普通用户场景词」就放行小红书
+    if (
+        any(k in (mat.source or "") for k in ("github", "watchlist"))
+        and is_proxy_boundary
+        and not is_xhs_friendly
+    ):
         return True
     return False
 
@@ -372,7 +398,7 @@ def _score_x_quality(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) 
         score += 12
     else:
         notes.append("长度/行数不佳")
-    if not any(p.search(tweet) for p in BANNED_PATTERNS):
+    if not any(p.search(tweet) for p in SOFT_BANNED_PATTERNS):
         score += 16
     else:
         notes.append("命中套话/营销词")
@@ -451,14 +477,15 @@ def _quality_check_x(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) 
     if len(tweet) > 280:
         return False, f"X 内容过长 ({len(tweet)} 字)"
     first_line = next((line.strip() for line in tweet.split("\n") if line.strip()), "")
-    if len(first_line) < 10 or len(first_line) > 70:
-        return False, f"X 首行长度 {len(first_line)} 不在 10-70"
+    if len(first_line) < 8 or len(first_line) > 80:
+        return False, f"X 首行长度 {len(first_line)} 不在 8-80"
     weak_hooks = _strategy_weak_hooks(strategy)
     if any(w in first_line for w in weak_hooks):
         return False, f"X 首行 hook 过弱: {first_line[:30]}"
-    for pat in BANNED_PATTERNS:
+    for pat in HARD_BANNED_PATTERNS:
         if pat.search(tweet):
-            return False, f"X 内容命中禁用词: {pat.pattern}"
+            return False, f"X 内容命中硬禁用词: {pat.pattern}"
+    # SOFT_BANNED_PATTERNS（AI 套话、营销黑话）不直接拒，由 _score_x_quality 扣分
     if not _contains_core_signal(mat, tweet):
         return False, "X 内容缺少素材核心实体/事件"
     if not any(p.search(tweet) for p in IMPACT_PATTERNS):
@@ -476,8 +503,8 @@ def _quality_check_other(data: dict) -> Tuple[bool, str]:
     tags = _normalize_tags(data.get("other_tags"))
     if not title or not content:
         return False, "小红书标题/正文空"
-    if len(title) < 8 or len(title) > 24:
-        return False, f"小红书标题 {len(title)} 字不在 8-24"
+    if len(title) < 8 or len(title) > 30:
+        return False, f"小红书标题 {len(title)} 字不在 8-30"
     title_banned = ("震惊", "绝了", "不看后悔", "全网疯传", "宝子", "家人们", "冲啊")
     if any(w in title for w in title_banned):
         return False, f"小红书标题标题党/硬广: {title[:20]}"

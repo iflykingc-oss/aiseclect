@@ -35,6 +35,23 @@
       ],
       "keywords": ["claude code", "cursor", "mcp", "agent", "ai coding", "coding assistant", "developer tools", "隐私", "涨价", "权限"],
       "github_query": "claude code OR cursor OR mcp OR ai coding agent OR developer tools"
+    },
+    {
+      "name": "ai_consumer_products",
+      "enabled": true,
+      "max_results": 8,
+      "queries": [
+        "ChatGPT app release",
+        "Claude consumer product",
+        "Gemini app update",
+        "Sora video generation",
+        "NotebookLM update",
+        "Perplexity AI search",
+        "ElevenLabs voice",
+        "豆包 通义 可灵 剪映 开源"
+      ],
+      "keywords": ["chatgpt", "claude", "gemini", "sora", "notebooklm", "perplexity", "elevenlabs", "豆包", "通义", "可灵", "剪映", "suno", "udio", "consumer", "consumer app"],
+      "github_query": "chatgpt OR claude-app OR gemini-app OR sora OR notebooklm OR perplexity OR elevenlabs OR suno OR udio OR 豆包 OR 通义 OR 可灵 OR 剪映"
     }
   ]
 }
