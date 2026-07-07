@@ -110,14 +110,14 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
         extra = m.extra_data or {}
         ns_id = str(extra.get("newsnow_source") or "")
         if ns_id in newsnow_consumer_ids:
-            score = max(score, 62.0)  # 进高分池（≥ 60）的门槛
+            score = max(score, 80.0)  # 提分到 80，覆盖 LLM 给普通热点的低打分
         # hackernews / solidot / v2ex / 财经类大众度低一档
         newsnow_secondary_ids = {
             "hackernews", "v2ex", "solidot", "cls", "wallstreetcn",
             "gelonghui", "jin10", "fastbull",
         }
         if ns_id in newsnow_secondary_ids:
-            score = max(score, 55.0)
+            score = max(score, 65.0)
         try:
             source_signal = float(extra.get("source_signal_score") or 0)
             source_weight = float(extra.get("source_weight") or 1.0)
