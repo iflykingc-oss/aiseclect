@@ -15,7 +15,7 @@ on:
       min_heat_score:
         description: '最低热度分（低于此分不进推文）'
         required: false
-        default: '40'
+        default: '18'
         type: string
       clear_dedup:
         description: '清空历史去重（慎用）'
@@ -81,8 +81,8 @@ jobs:
           # GitHub（可选）
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 行为参数（手动触发时可覆盖）
-          AISECLECT_MAX_PER_SOURCE: ${{ github.event.inputs.max_per_source || '6' }}
-          AISECLECT_MIN_HEAT_SCORE: ${{ github.event.inputs.min_heat_score || '30' }}
+          AISECLECT_MAX_PER_SOURCE: ${{ github.event.inputs.max_per_source || '12' }}
+          AISECLECT_MIN_HEAT_SCORE: ${{ github.event.inputs.min_heat_score || '18' }}
           AISECLECT_CLEAR_DEDUP: ${{ github.event.inputs.clear_dedup || 'false' }}
           AISECLECT_CLEANUP_PENDING: ${{ github.event.inputs.cleanup_pending || 'false' }}
         run: |

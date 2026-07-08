@@ -55,7 +55,9 @@ DEFAULT_STRATEGY: Dict[str, Any] = {
 HARD_BANNED_PATTERNS = [
     re.compile(r"#\w+"),  # hashtag
     re.compile(r"重磅|史诗|颠覆|天花板|神器|全民必备|彻底革新|震撼|惊艳"),
-    re.compile(r"我个人认为|我的判断是|让我深感|让我震撼"),
+    # 「我的判断」「我个人认为」从 HARD 移到 SOFT —— system prompt 鼓励使用第一人称判断口吻
+    # 留下「让我深感|让我震撼」（情绪化表达）
+    re.compile(r"让我深感|让我震撼"),
 ]
 
 SOFT_BANNED_PATTERNS = [
@@ -65,6 +67,8 @@ SOFT_BANNED_PATTERNS = [
     re.compile(r"这意味着|真正的[核心终局护城河关键]|才是真正的|才是核心"),
     re.compile(r"不得不|不能不"),
     re.compile(r"对\w+来说[，,]这"),
+    # 第一人称判断口吻（之前在 HARD，误杀合格内容。改软扣分）
+    re.compile(r"我个人认为|我的判断是"),
     re.compile(r"未来已来|时代变了|我们拭目以待|未来可期"),
     re.compile(r"预示着|揭开了[.的]*序幕|分水岭|转折点"),
     re.compile(r"不容错过|值得深思|值得收藏"),
@@ -102,6 +106,10 @@ XHS_FRIENDLY_PATTERNS = [
 IMPACT_PATTERNS = [
     re.compile(r"影响|风险|机会|适合|利好|门槛|成本|避坑|注意|权限|隐私|安全|涨价|下架|封锁|泄露|翻车|普通人|打工人|创作者|开发者|企业|学生"),
     re.compile(r"上线|开放|发布|更新|限制|停止|迁移|退出|转投|支持|不再支持"),
+    # 新增：实用向可执行动词 / 普通用户场景（覆盖 prompt 鼓励的「今天就能试」「普通人马上用」风格）
+    re.compile(r"试试|上手|白嫖|免费|立刻|马上|今天就能|可用|对照|比较|入手|替代|学习|实测|体验|尝鲜|一键|3 步|5 步|三步|五步|配置|部署|设置"),
+    re.compile(r"小白|新手|家长|学生党|宝妈|刚入门|设计|运营|销售|程序员|产品经理|管理层"),
+    re.compile(r"涨|降|省|赚|补|扣|减|送|加|加量|升级|解锁|开启|关闭|取消"),
 ]
 
 # 按 source 字段自动给 prompt 提示写作视角。不是输出字段。
@@ -317,6 +325,20 @@ def _normalize_tags(raw) -> List[str]:
     if isinstance(raw, str):
         return [t.strip().lstrip("#") for t in raw.replace("，", ",").split(",") if t.strip()]
     return []
+
+
+# 允许的 content_angle 白名单（来自 config/content_strategy.json 的 angles）。
+# LLM 偶尔会输出白名单外/自由发挥值，统一归一为默认 angle 避免污染飞书 / quality_report。
+_KNOWN_ANGLES = {
+    "breaking_news", "risk_alert", "tool_use_case", "cost_change",
+    "privacy_security", "developer_update", "ecosystem_shift", "controversy",
+}
+_DEFAULT_ANGLE = "tool_use_case"
+
+
+def _normalize_angle(raw: str) -> str:
+    s = str(raw or "").strip().lower().replace(" ", "_").replace("-", "_")
+    return s if s in _KNOWN_ANGLES else _DEFAULT_ANGLE
 
 
 def _has_other_content(data: dict) -> bool:
@@ -565,20 +587,26 @@ def _violates_safety_boundary(mat: ScoredMaterial, data: dict) -> bool:
 
 
 def _quality_check_x(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) -> Tuple[bool, str]:
-    """X 内容质量门禁。返回 (pass, reason)。"""
+    """X 内容质量门禁。返回 (pass, reason)。
+
+    阈值（适配 LLM 偶发偏长，同时不放过过弱内容）：
+    - 总长 30-380 字（初版 45-280；扩到 320 还是被卡，再扩到 380）
+    - 首行 6-130 字（避免 LLM 一句话超长描述）
+    - 行数 2-10 行（LLM 偶尔把内容分多段）
+    """
     tweet = (data.get("tweet_content") or "").strip()
     if not tweet:
         return False, "tweet_content 空"
     lines = _count_lines(tweet)
-    if lines < 2 or lines > 8:
-        return False, f"X 内容行数 {lines} 不在 2-8"
-    if len(tweet) < 45:
+    if lines < 2 or lines > 10:
+        return False, f"X 内容行数 {lines} 不在 2-10"
+    if len(tweet) < 30:
         return False, f"X 内容过短 ({len(tweet)} 字)"
-    if len(tweet) > 280:
+    if len(tweet) > 380:
         return False, f"X 内容过长 ({len(tweet)} 字)"
     first_line = next((line.strip() for line in tweet.split("\n") if line.strip()), "")
-    if len(first_line) < 8 or len(first_line) > 80:
-        return False, f"X 首行长度 {len(first_line)} 不在 8-80"
+    if len(first_line) < 6 or len(first_line) > 130:
+        return False, f"X 首行长度 {len(first_line)} 不在 6-130"
     weak_hooks = _strategy_weak_hooks(strategy)
     if any(w in first_line for w in weak_hooks):
         return False, f"X 首行 hook 过弱: {first_line[:30]}"
@@ -626,7 +654,35 @@ def _quality_check_other(data: dict) -> Tuple[bool, str]:
     return True, "ok"
 
 
-def _reject_event(mat: ScoredMaterial, stage: str, reason: str, data: dict | None = None) -> dict:
+# reject_kind 命名空间（出现在 reject_report_*.json 的 stage_stats 字典里）
+REJECT_KIND_NO_LLM = "no_llm_output"
+REJECT_KIND_X_FAIL = "x_quality_fail"
+REJECT_KIND_X_SCORE_LOW = "x_quality_score_low"
+REJECT_KIND_XHS_FAIL = "xhs_quality_fail"
+REJECT_KIND_XHS_SCORE_LOW = "xhs_quality_score_low"
+REJECT_KIND_OFF_TOPIC = "off_topic"
+REJECT_KIND_UNKNOWN = "unknown"
+
+
+def _classify_reject(reason: str) -> str:
+    """根据 reject_reason 字符串映射到 reject_kind 命名空间。"""
+    if not reason:
+        return REJECT_KIND_UNKNOWN
+    r = reason.strip()
+    # XHS 失败路径：_build_draft 用 'xhs_failed: ' 前缀打头
+    if r.startswith("xhs_failed:"):
+        inner = r[len("xhs_failed:"):].strip()
+        if "小红书质量分" in inner:
+            return REJECT_KIND_XHS_SCORE_LOW
+        return REJECT_KIND_XHS_FAIL
+    # X 评分低于阈值
+    if r.startswith("X质量分"):
+        return REJECT_KIND_X_SCORE_LOW
+    # X 硬约束失败
+    return REJECT_KIND_X_FAIL
+
+
+def _reject_event(mat: ScoredMaterial, reject_kind: str, reason: str, data: dict | None = None) -> dict:
     return {
         "url": mat.url,
         "title": mat.title,
@@ -635,7 +691,7 @@ def _reject_event(mat: ScoredMaterial, stage: str, reason: str, data: dict | Non
         "heat_score": mat.heat_score,
         "score_reason": mat.score_reason,
         "discovery_reason": _discovery_reason(mat),
-        "stage": stage,
+        "reject_kind": reject_kind,
         "reason": reason,
         "platform": (data or {}).get("platform"),
         "content_angle": (data or {}).get("content_angle"),
@@ -662,7 +718,7 @@ def _build_draft(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) -> T
     if _force_only_x(mat):
         data["platform"] = PLATFORM_ONLY_X
 
-    angle = str(data.get("content_angle") or _infer_angle(mat, strategy))
+    angle = _normalize_angle(data.get("content_angle") or _infer_angle(mat, strategy))
     x_quality_score, x_quality_notes = _score_x_quality(mat, data, strategy)
     x_pass_score = float((strategy.get("x") or {}).get("pass_score", 75))
     ok_x, reason_x = _quality_check_x(mat, data, strategy)
@@ -793,7 +849,7 @@ def tweet_generator_node(state: TweetGeneratorInput) -> TweetGeneratorOutput:
         if not data:
             dropped_no_llm += 1
             reason = "LLM 未生成素材"
-            reject_events.append(_reject_event(mat, "llm_missing", reason))
+            reject_events.append(_reject_event(mat, REJECT_KIND_NO_LLM, reason))
             logger.warning(f"{reason}, drop: {mat.url} | {mat.title[:60]}")
             continue
         draft, reject_reason = _build_draft(mat, data, strategy)
@@ -837,7 +893,7 @@ def tweet_generator_node(state: TweetGeneratorInput) -> TweetGeneratorOutput:
                     reject_reason = f"首次失败: {reject_reason}; 修复调用无结果"
         if draft is None:
             dropped_quality += 1
-            reject_events.append(_reject_event(mat, "quality_rejected", reject_reason, data))
+            reject_events.append(_reject_event(mat, _classify_reject(reject_reason), reject_reason, data))
             continue
         drafts.append(draft)
 

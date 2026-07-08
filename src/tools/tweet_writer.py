@@ -83,21 +83,50 @@ def write_tweets(
         json.dump(report, f, ensure_ascii=False, indent=2)
 
     reject_path = out_dir / f"reject_report_{ts}.json"
+
+    # 按 reject_kind 聚合分布（替代旧的 stage_stats）。保留 stage_stats 作为向后兼容别名。
+    kind_stats: dict[str, int] = {}
+    source_stats: dict[str, int] = {}
+    reason_counter: dict[str, int] = {}
+    for item in rejects:
+        kind = str(item.get("reject_kind") or "unknown")
+        kind_stats[kind] = kind_stats.get(kind, 0) + 1
+        src = str(item.get("source") or "unknown")
+        source_stats[src] = source_stats.get(src, 0) + 1
+        # 高频 reject_reason（前 60 字符归一化，便于 prompt 优化时定位）
+        reason_key = (str(item.get("reason") or "")).strip()
+        if "首次失败:" in reason_key:
+            reason_key = reason_key.split("首次失败:", 1)[1].strip()
+        if "; 修复后失败:" in reason_key:
+            reason_key = reason_key.split("; 修复后失败:", 1)[0].strip()
+        reason_key = reason_key[:60].strip()
+        if reason_key:
+            reason_counter[reason_key] = reason_counter.get(reason_key, 0) + 1
+
+    top_reject_reasons = sorted(
+        reason_counter.items(), key=lambda kv: -kv[1]
+    )[:10]
+
     reject_payload = {
         "generated_at": generated_at,
         "count": len(rejects),
         "items": rejects,
-        "stage_stats": {},
+        "kind_stats": kind_stats,
+        "source_stats": source_stats,
+        "top_reject_reasons": [
+            {"reason": r, "count": c} for r, c in top_reject_reasons
+        ],
+        "stage_stats": kind_stats,  # 向后兼容别名
     }
-    for item in rejects:
-        stage = str(item.get("stage") or "unknown")
-        reject_payload["stage_stats"][stage] = reject_payload["stage_stats"].get(stage, 0) + 1
     with reject_path.open("w", encoding="utf-8") as f:
         json.dump(reject_payload, f, ensure_ascii=False, indent=2)
 
     logger.info(f"推文草稿已写入: {path} ({len(drafts)} 条)")
     logger.info(f"质量报告已写入: {report_path}")
-    logger.info(f"拒绝报告已写入: {reject_path} ({len(rejects)} 条)")
+    logger.info(
+        f"拒绝报告已写入: {reject_path} ({len(rejects)} 条, "
+        f"分布 {', '.join(f'{k}={v}' for k, v in sorted(kind_stats.items(), key=lambda kv: -kv[1]))})"
+    )
     return path
 
 

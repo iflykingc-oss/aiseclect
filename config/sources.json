@@ -7,14 +7,6 @@
       "source_weight": 0.90,
       "max_results": 16,
       "repos": [
-        "XTLS/Xray-core",
-        "SagerNet/sing-box",
-        "MetaCubeX/mihomo",
-        "2dust/v2rayN",
-        "v2ray/v2ray-core",
-        "hiddify/hiddify-next",
-        "shadowsocks/shadowsocks-rust",
-        "apernet/hysteria",
         "modelcontextprotocol/servers",
         "punkpeye/awesome-mcp-servers",
         "github/github-mcp-server",
@@ -24,7 +16,13 @@
         "pydantic/pydantic-ai",
         "microsoft/autogen",
         "continuedev/continue",
-        "cline/cline"
+        "cline/cline",
+        "anthropics/claude-code",
+        "f/awesome-chatgpt-prompts",
+        "mitchellkrogza/awesome-chatgpt-prompts",
+        "openai/openai-python",
+        "anthropics/anthropic-cookbook",
+        "anthropics/anthropic-sdk-python"
       ]
     },
     {
@@ -59,7 +57,48 @@
         "ElevenLabs",
         "Perplexity",
         "Anthropic consumer",
-        "OpenAI consumer"
+        "OpenAI consumer",
+        "Show HN AI tool",
+        "Show HN ChatGPT",
+        "Show HN Claude",
+        "Show HN prompt",
+        "Show HN LLM productivity"
+      ]
+    },
+    {
+      "name": "hackernews_practical",
+      "type": "hn_algolia",
+      "enabled": true,
+      "source_weight": 1.30,
+      "max_results": 28,
+      "queries": [
+        "AI prompt tips",
+        "prompt engineering guide",
+        "ChatGPT productivity",
+        "Claude productivity",
+        "AI workflow automation",
+        "LLM productivity",
+        "AI writing assistant",
+        "AI coding beginner",
+        "ChatGPT plugins",
+        "Claude projects",
+        "Gemini tips",
+        "AI image prompting",
+        "Stable Diffusion prompts",
+        "Midjourney prompting",
+        "Sora prompting",
+        "AI translation tools",
+        "AI summarize tool",
+        "AI for students",
+        "AI for writers",
+        "AI notetaking",
+        "AI meeting notes",
+        "best AI tools 2026",
+        "AI alternatives",
+        "AI pricing comparison",
+        "GPT vs Claude vs Gemini",
+        "cheap AI subscription",
+        "free AI tools"
       ]
     },
     {

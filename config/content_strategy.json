@@ -19,7 +19,22 @@
       {
         "key": "niche_quake",
         "name": "圈层爆点",
-        "description": "普通人看着小，但在 AI/开发者/开源/VPN/proxy 圈层是大事件。"
+        "description": "普通人看着小，但在 AI / 开发者 / 创作者 / 投资人 / 硬件玩家圈层是大事件。其它无关领域一律不算。"
+      },
+      {
+        "key": "practical_tip",
+        "name": "实用技巧",
+        "description": "普通人看完可以马上试的 3 步、5 步、提问模板、咒语、对比表，少术语多动作。"
+      },
+      {
+        "key": "copy_paste_prompt",
+        "name": "可复制咒语/模板",
+        "description": "直接给一句可粘贴的 prompt、生图咒语、邮件/简历/总结/翻译模板，复制即用。"
+      },
+      {
+        "key": "before_after",
+        "name": "前后对比",
+        "description": "用 AI 前后效果对比（普通照片 vs AI 修图、原 prompt vs 优化后、原始 vs 改写），凸显 AI 的可量化增益。"
       },
       {
         "key": "ecosystem_shift",
@@ -70,13 +85,18 @@
       "对比型：ChatGPT 和 Claude 适合的人不一样",
       "清单型：5 个适合新手的 AI 工作流",
       "结果型：我会优先关注这类 AI 产品",
-      "风险型：AI 工具越方便，隐私越要小心"
+      "风险型：AI 工具越方便，隐私越要小心",
+      "教程型：5 步教你用 AI 写出爆款标题",
+      "咒语型：这一句生图 prompt 直接抄",
+      "平替型：Claude 涨价后这 3 个免费替代",
+      "测评型：我把这 5 个 AI 工具都用了一周",
+      "流程型：AI 自动帮我做完这 5 件事"
     ],
     "tag_strategy": {
-      "big_terms": ["AI工具", "科技趋势", "效率工具"],
-      "scenario_terms": ["AI办公", "打工人效率", "创作者工具", "AI学习", "AI写作"],
-      "specific_terms": ["ChatGPT技巧", "Claude", "Cursor", "AI绘画", "AI视频"],
-      "risk_terms": ["避坑", "隐私安全", "涨价提醒", "工具测评"]
+      "big_terms": ["AI工具", "科技趋势", "效率工具", "AI干货"],
+      "scenario_terms": ["AI办公", "打工人效率", "创作者工具", "AI学习", "AI写作", "学生党", "小白入门", "宝妈副业"],
+      "specific_terms": ["ChatGPT技巧", "Claude", "Cursor", "AI绘画", "AI视频", "豆包", "通义", "可灵", "即梦", "Sora", "Suno", "prompt模板", "生图咒语", "AI教程"],
+      "risk_terms": ["避坑", "隐私安全", "涨价提醒", "工具测评", "免费替代", "平替推荐"]
     },
     "quality_rubric": {
       "title_clickability": 25,
@@ -99,8 +119,23 @@
     "controversy": ["争议", "翻车", "封禁", "下架", "抵制", "大地震"]
   },
   "platform_rules": {
-    "xhs_requires": ["普通用户能理解", "有使用/避坑/风险/价格/效率/创作场景", "不是纯 API/论文/benchmark/repo 更新"],
-    "only_x_default": ["API", "SDK", "endpoint", "benchmark", "arxiv", "CUDA", "kernel", "纯 GitHub release", "纯论文"],
-    "safety_boundary": "VPN/proxy/Xray 等内容只写公开项目动态、安全隐私、生态影响和风险提醒，不写配置、节点、绕过教程、购买渠道。"
+    "xhs_requires": [
+      "普通用户能理解",
+      "有使用/避坑/风险/价格/效率/创作场景",
+      "不是纯 API/论文/benchmark/repo 更新",
+      "能讲清「普通人能怎么用、为什么关心、有什么效果或风险」"
+    ],
+    "only_x_default": [
+      "纯 API",
+      "纯 SDK",
+      "纯 endpoint 变更",
+      "纯 benchmark / 评测榜",
+      "arxiv / 纯论文",
+      "CUDA / kernel / 编译器底层实现",
+      "纯 GitHub release 且无法转译成普通人能用的价值",
+      "纯圈内人事/融资/收购消息"
+    ],
+    "hard_tech_filter": "模型/框架/benchmark/论文 类硬技术前言，必须显式回答两个问题才算合格：① 这事和普通用户有什么关系？② 大众关心吗？不回答的强制仅X。",
+    "safety_boundary": "不写违法操作指导、规避检测步骤、节点配置、购买敏感渠道；网络工具类一律不入正文。"
   }
 }

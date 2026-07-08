@@ -93,9 +93,10 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
         score = 0.0
         if "watchlist" in (m.source or ""):
             score = max(score, 58.0)
-        if any(k in text for k in ("xray", "xtls", "v2ray", "vpn", "proxy", "翻墙", "科学上网", "sing-box", "clash", "mihomo")):
-            score = max(score, 55.0)
-        if any(k in text for k in ("退出中国", "俄罗斯", "伊朗", "漏洞", "cve", "泄露", "封锁", "下架", "breaking change")):
+        # 实用向 watchlist：prompt/教程/生图咒语/AI 办公/平替
+        if "practical" in (m.source or "") or "tips" in (m.source or ""):
+            score = max(score, 62.0)
+        if any(k in text for k in ("漏洞", "cve", "泄露", "下架", "breaking change")):
             score += 8.0
         # NewsNow 中文大众向 source 加 base 分（之前 GitHub watchlist 占 80%+，
         # NewsNow 中文热榜素材被打到 0 分进不了高分池，被 LLM 看到的机会很少）
@@ -126,11 +127,41 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
             score += 5.0
         return min(score, 85.0) if score else 0.0
 
-    def _final_score(llm_score: float, m: StandardMaterial) -> float:
+    def _final_score(llm_score: float, m: StandardMaterial, topic_relevant: bool = True) -> float:
+        # AI 主题闸门：LLM 判定非 AI 主题时直接 0 分，不进入推文生成
+        if not topic_relevant:
+            return 0.0
         base = max(llm_score, _rule_score(m))
         return max(0.0, min(100.0, base + _audience_bias(m.category, m.source))) if base else 0.0
 
-    def _fallback_score(m: StandardMaterial) -> float:
+    def _fallback_score(m: StandardMaterial, topic_relevant: bool = True) -> float:
+        # LLM 调用失败时按规则分保底；如果 LLM 明确说非 AI 主题，再做一次关键词兜底
+        if not topic_relevant:
+            text_ai = " ".join([m.title or "", m.snippet or "", m.content or ""]).lower()
+            ai_signal = any(
+                k in text_ai for k in (
+                    "ai", "llm", "gpt", "claude", "gemini", "豆包", "通义", "kim", "文心",
+                    "可灵", "即梦", "midjourney", "suno", "sora", "dall-e",
+                    "prompt", "咒语", "智能", "大模型", "agent", "mcp", "cursor",
+                    "openai", "anthropic", "deepmind", "huggingface", "copilot",
+                    "文心", "kimi", "千问", "通义", "元宝",
+                )
+            ) or "watchlist" in (m.source or "") or "practical" in (m.source or "")
+            if not ai_signal:
+                return 0.0
+        # fallback 路径（LLM 完全失败）：也做一次 AI 关键词检测，避免规则加分把娱乐/体育送进飞书
+        text_all = " ".join([m.title or "", m.snippet or "", m.content or "", m.source or "", m.category or ""]).lower()
+        ai_baseline = any(
+            k in text_all for k in (
+                "ai", "llm", "gpt", "claude", "gemini", "豆包", "通义", "kimi", "文心",
+                "可灵", "即梦", "midjourney", "suno", "sora", "dall-e",
+                "prompt", "咒语", "智能", "大模型", "agent", "mcp", "cursor",
+                "openai", "anthropic", "deepmind", "huggingface", "copilot",
+                "千问", "元宝", "chatgpt",
+            )
+        ) or "watchlist" in (m.source or "") or "practical" in (m.source or "") or "ainews" in (m.source or "") or "aihot" in (m.source or "")
+        if not ai_baseline:
+            return 0.0
         base = max(50.0, _rule_score(m))
         return max(0.0, min(100.0, base + _audience_bias(m.category, m.source)))
 
@@ -168,19 +199,30 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
 
     # 关联 url -> score
     score_map = {}
+    topic_relevant_map = {}
+    reason_map = {}
     for item in score_results:
         if isinstance(item, dict) and item.get("url"):
             try:
                 score_map[item["url"]] = float(item.get("heat_score", 0) or 0)
             except (TypeError, ValueError):
                 pass
+            topic_relevant_map[item["url"]] = bool(item.get("ai_topic_relevant", True))
+            reason_map[item["url"]] = str(item.get("score_reason", ""))
 
     scored: List[ScoredMaterial] = []
     high = 0
+    non_ai_count = 0
     for m in state.deduplicated_materials:
-        s = _final_score(score_map.get(m.url, 0.0), m)
+        is_ai_topic = topic_relevant_map.get(m.url, True)
+        s = _final_score(score_map.get(m.url, 0.0), m, topic_relevant=is_ai_topic)
         if s >= 60:
             high += 1
+        if not is_ai_topic:
+            non_ai_count += 1
+        reason_text = reason_map.get(m.url, "") or ""
+        if not is_ai_topic:
+            reason_text = (reason_text or "LLM 判定非 AI 主题").strip()
         scored.append(
             ScoredMaterial(
                 url=m.url,
@@ -192,13 +234,11 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
                 category=m.category,
                 extra_data=m.extra_data,
                 heat_score=s,
-                score_reason=(
-                    next((x.get("score_reason", "") for x in score_results if x.get("url") == m.url), "")
-                    if isinstance(score_results, list)
-                    else ""
-                ),
+                score_reason=reason_text,
             )
         )
 
-    logger.info(f"打分完成: {len(scored)} 条, 高分 {high} 条")
+    logger.info(
+        f"打分完成: {len(scored)} 条, 高分 {high} 条, 非AI主题DROP {non_ai_count} 条"
+    )
     return HeatScorerOutput(scored_materials=scored, high_score_count=high, total_after_score=len(scored))
