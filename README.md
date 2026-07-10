@@ -122,12 +122,16 @@ on:
 
 - `config/watchlist.json`：配置长尾热点 watchlist，例如 Xray / VPN / proxy / Claude Code / Cursor / MCP 等；Tavily 与 GitHub 采集都会读取它。
 - `config/content_strategy.json`：配置 X hook 类型、小红书标题/标签策略、平台分流规则、质量评分阈值。
+- `collect_pipeline.humanizer`：本地中文去 AI 味后处理，减少“本质上 / 这意味着 / 未来已来”等模板句，并把 `ai_tone` 记录到质量备注。
+- `content_strategy.image_prompt_rubric`：小红书封面提示词规范，约束主体、构图、配色、字体、氛围和禁用元素；当前仍输出文本提示词，不自动渲染图片。
 - `output/quality_report_*.json`：每次本地落盘时生成，记录每条成功草稿的内容角度、hook 类型、平台理由、X质量分、小红书质量分、发现原因。
 - `output/reject_report_*.json`：记录未生成、质量门禁失败、修复后仍失败的素材和原因，用于继续调 prompt / 策略。
 
 飞书会写入辅助审核字段：内容角度、Hook类型、平台判断理由、X质量分、小红书质量分、质量备注、素材来源、发现原因、评分理由。
 
 > 本系统不追踪发布后的展示、点赞、评论等数据；质量优化只服务于生成和人工审核。
+>
+> `x-research-skill` 与真实图像渲染已评估但暂不接入主流程：前者需要先确认 CLI/auth/output schema，后者需要确定稳定的图片 backend，避免影响 4 小时定时任务。
 
 ## 本地调试
 

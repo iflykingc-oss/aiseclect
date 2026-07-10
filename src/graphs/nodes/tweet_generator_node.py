@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Tuple
 
 from jinja2 import Template
 
+from collect_pipeline.humanizer import humanize_draft
 from graphs.state import (
     ScoredMaterial,
     TweetDraft,
@@ -47,6 +48,14 @@ DEFAULT_STRATEGY: Dict[str, Any] = {
     "x": {"pass_score": 75, "banned_weak_hooks": ["值得关注", "重要更新", "最新消息", "又有新消息", "一文看懂", "简单说"]},
     "xiaohongshu": {"pass_score": 80},
     "angles": {},
+}
+DEFAULT_IMAGE_PROMPT_RUBRIC: Dict[str, Any] = {
+    "aspect": ["3:4", "4:5"],
+    "required_segments": ["主体", "构图", "配色", "字体", "氛围"],
+    "forbidden": ["真实公司 logo", "真实名人脸", "水印", "复杂小字", "二维码", "logo"],
+    "style_options": ["扁平插画", "信息图卡片", "对比图", "生活场景摄影", "产品截图风格", "暗色高亮文字海报"],
+    "min_length": 60,
+    "max_length": 220,
 }
 
 # 禁用词分两层：
@@ -526,6 +535,75 @@ def _score_x_quality(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) 
     return min(score, 100.0), "；".join(notes) or "ok"
 
 
+def _image_prompt_rubric(strategy: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    """读取封面提示词 rubric，缺省时使用保守默认值。"""
+    rubric = dict(DEFAULT_IMAGE_PROMPT_RUBRIC)
+    if strategy:
+        configured = strategy.get("image_prompt_rubric") or {}
+        rubric.update({k: v for k, v in configured.items() if v is not None})
+    return rubric
+
+
+def _validate_image_prompt(prompt: str, strategy: Dict[str, Any] | None = None) -> Tuple[bool, str]:
+    """校验小红书封面提示词。
+
+    只对明确不可用/有风险的内容硬拒；缺少结构细节交给评分扣分，避免短期误杀。
+    """
+    prompt = (prompt or "").strip()
+    rubric = _image_prompt_rubric(strategy)
+    max_length = int(rubric.get("max_length", 220) or 220)
+    min_length = int(rubric.get("min_length", 60) or 60)
+    if len(prompt) < 30:
+        return False, f"提示词过短 ({len(prompt)} 字)"
+    if len(prompt) > max_length:
+        return False, f"提示词过长 ({len(prompt)} 字)"
+    forbidden = tuple(str(x) for x in (rubric.get("forbidden") or []))
+    for term in forbidden:
+        if term and term.lower() in prompt.lower():
+            return False, f"命中禁用元素: {term}"
+    if len(prompt) < min_length:
+        return True, f"提示词偏短，建议补充构图/配色/字体/氛围 ({len(prompt)} 字)"
+    required = [str(x) for x in (rubric.get("required_segments") or [])]
+    missing = [x for x in required if x and x not in prompt]
+    if missing:
+        return True, "建议补充: " + ",".join(missing[:3])
+    return True, "ok"
+
+
+def _score_image_prompt_quality(prompt: str, strategy: Dict[str, Any]) -> Tuple[float, str]:
+    """封面提示词质量分，最高 10 分。"""
+    prompt = (prompt or "").strip()
+    ok, reason = _validate_image_prompt(prompt, strategy)
+    if not ok:
+        return 0.0, reason
+
+    rubric = _image_prompt_rubric(strategy)
+    score = 0.0
+    notes: List[str] = []
+    if 30 <= len(prompt) <= int(rubric.get("max_length", 220) or 220):
+        score += 2
+    if len(prompt) >= int(rubric.get("min_length", 60) or 60):
+        score += 2
+    else:
+        notes.append("提示词偏短")
+    if any(str(x) in prompt for x in (rubric.get("aspect") or [])):
+        score += 2
+    else:
+        notes.append("缺少比例")
+    segment_hits = sum(1 for x in (rubric.get("required_segments") or []) if str(x) in prompt)
+    score += min(segment_hits, 3)
+    if segment_hits < 3:
+        notes.append("画面要素不足")
+    style_terms = tuple(str(x) for x in (rubric.get("style_options") or [])) + ("封面", "信息图", "卡片", "插画", "海报")
+    if any(term in prompt for term in style_terms):
+        score += 1
+    else:
+        notes.append("缺少视觉风格")
+    if reason != "ok":
+        notes.append(reason)
+    return min(score, 10.0), "；".join(notes) or "ok"
+
+
 def _score_xhs_quality(data: dict, strategy: Dict[str, Any]) -> Tuple[float, str]:
     title = (data.get("other_title") or "").strip()
     content = (data.get("other_content") or "").strip()
@@ -559,13 +637,13 @@ def _score_xhs_quality(data: dict, strategy: Dict[str, Any]) -> Tuple[float, str
     else:
         notes.append("实用/避坑弱")
     if 120 <= len(content) <= 450 and 3 <= len(tags) <= 8:
-        score += 10
-    else:
-        notes.append("正文或标签长度不佳")
-    if 30 <= len(image_prompt) <= 220 and any(k in image_prompt for k in ("封面", "信息图", "3:4", "4:5", "小红书")):
         score += 5
     else:
-        notes.append("封面提示词弱")
+        notes.append("正文或标签长度不佳")
+    image_score, image_notes = _score_image_prompt_quality(image_prompt, strategy)
+    score += image_score
+    if image_score < 7:
+        notes.append("封面提示词弱" if image_notes == "ok" else f"封面提示词弱: {image_notes}")
     return min(score, 100.0), "；".join(notes) or "ok"
 
 
@@ -623,7 +701,7 @@ def _quality_check_x(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) 
     return True, "ok"
 
 
-def _quality_check_other(data: dict) -> Tuple[bool, str]:
+def _quality_check_other(data: dict, strategy: Dict[str, Any] | None = None) -> Tuple[bool, str]:
     """小红书内容质量门禁。"""
     title = (data.get("other_title") or "").strip()
     content = (data.get("other_content") or "").strip()
@@ -642,6 +720,9 @@ def _quality_check_other(data: dict) -> Tuple[bool, str]:
         return False, f"小红书标签数 {len(tags)} 不在 3-8"
     if len(image_prompt) < 30 or len(image_prompt) > 220:
         return False, f"配图提示词 {len(image_prompt)} 字不在 30-220"
+    ok_image, reason_image = _validate_image_prompt(image_prompt, strategy)
+    if not ok_image:
+        return False, f"配图提示词未通过 rubric: {reason_image}"
     signals = [
         "适合", "影响", "可以", "建议", "注意", "风险", "用来", "帮助", "避免", "普通人",
         "打工人", "创作者", "创业者", "怎么", "判断", "避坑", "智能眼镜", "耳机", "音箱",
@@ -715,6 +796,14 @@ def _downgrade_to_only_x(data: dict) -> dict:
 def _build_draft(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) -> Tuple[TweetDraft | None, str]:
     """从 LLM 生成的 dict 构造 TweetDraft。返回 (draft, reject_reason)。"""
     data = _normalize_generated_payload(data)
+    tone_note = ""
+    try:
+        data, tone_report = humanize_draft(data)
+        tone_note = f"ai_tone={tone_report.ai_score:.0f}"
+        if tone_report.ai_cliche_hits:
+            tone_note += "; hits=" + ",".join(tone_report.ai_cliche_hits[:3])
+    except Exception as e:
+        logger.warning(f"humanizer 处理失败，保留原文: {e}")
     if _force_only_x(mat):
         data["platform"] = PLATFORM_ONLY_X
 
@@ -749,7 +838,7 @@ def _build_draft(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) -> T
             "other_content": other_content,
             "other_tags": other_tags,
             "image_prompt": image_prompt,
-        })
+        }, strategy)
         if not ok_other or xhs_quality_score < xhs_pass_score:
             reason = reason_other if not ok_other else f"小红书质量分 {xhs_quality_score:.0f} < {xhs_pass_score:.0f}: {xhs_quality_notes}"
             logger.debug(f"小红书内容门禁拒: {mat.title[:50]} | {reason}")
@@ -777,7 +866,7 @@ def _build_draft(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) -> T
         platform_reason=str(data.get("platform_reason") or ("适合小红书" if platform == PLATFORM_GENERAL else "硬技术/圈层内容，仅X更合适")),
         x_quality_score=x_quality_score,
         xhs_quality_score=xhs_quality_score,
-        quality_notes=" | ".join([x_quality_notes, xhs_quality_notes]).strip(" |"),
+        quality_notes=" | ".join([x_quality_notes, xhs_quality_notes, tone_note]).strip(" |"),
         source=mat.source,
         score_reason=mat.score_reason,
         discovery_reason=_discovery_reason(mat),
