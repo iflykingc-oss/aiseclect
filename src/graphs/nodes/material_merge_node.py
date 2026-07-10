@@ -1,6 +1,6 @@
 """
-素材合并节点 - 6 路 → 标准化列表
-- aihot / ainews / rss / tavily / github / newsnow
+素材合并节点 - 8 路 → 标准化列表
+- aihot / ainews / rss / tavily / github / newsnow / agent_reach（可选第 7 路）/ feedgrab（可选第 8 路）
 """
 from __future__ import annotations
 
@@ -97,6 +97,12 @@ def material_merge_node(state: MaterialMergeInput) -> MaterialMergeOutput:
     all_materials.extend(state.tavily_materials)
     all_materials.extend(state.github_materials)
     all_materials.extend(state.newsnow_materials)
+    # 第 7 路：agent_reach（CLI 不在时为空列表）
+    if getattr(state, "agent_reach_materials", None):
+        all_materials.extend(state.agent_reach_materials)
+    # 第 8 路：feedgrab（CLI 不在时为空列表）
+    if getattr(state, "feedgrab_materials", None):
+        all_materials.extend(state.feedgrab_materials)
 
     merged: List[StandardMaterial] = []
     for raw in all_materials:

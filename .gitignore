@@ -31,3 +31,11 @@ dist/
 build/
 *.log
 .cozeproj/
+
+# Pipeline outputs (only ignore large caches; keep example reports)
+dedup_state.json
+
+# Local test runs
+output/quality_report_*.json
+output/reject_report_*.json
+output/aihot_etag.json

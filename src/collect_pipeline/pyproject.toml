@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "collect-pipeline"
+version = "0.1.0"
+description = "通用采集-去重-打分-落盘流水线，从 aiseclect 抽出"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "pydantic>=2.5,<3",
+]
+
+[project.optional-dependencies]
+langgraph = ["langgraph>=0.2"]
+llm = ["langchain-openai>=0.2", "langchain-core>=0.3"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["collect_pipeline*"]

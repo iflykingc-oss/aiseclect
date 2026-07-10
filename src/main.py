@@ -35,7 +35,7 @@ from rich.table import Table
 
 from graphs.state import GraphInput, GraphOutput
 from graphs.graph import main_graph
-from tools.feishu_notifier import get_notifier
+from feishu_bitable import get_notifier
 from tools.tweet_writer import write_tweets
 
 console = Console(force_terminal=True, legacy_windows=False)

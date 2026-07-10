@@ -10,7 +10,7 @@ import logging
 from typing import List, Optional
 
 from graphs.state import FeishuTableInitInput, FeishuTableInitOutput
-from tools.feishu_client import FeishuClient
+from feishu_bitable import FeishuClient
 
 logger = logging.getLogger(__name__)
 

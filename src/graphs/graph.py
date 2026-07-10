@@ -24,6 +24,10 @@ from graphs.state import (
     GitHubCollectorOutput,
     NewsNowCollectorInput,
     NewsNowCollectorOutput,
+    AgentReachCollectorInput,
+    AgentReachCollectorOutput,
+    FeedgrabCollectorInput,
+    FeedgrabCollectorOutput,
     MaterialMergeInput,
     MaterialMergeOutput,
     DedupFilterInput,
@@ -47,6 +51,8 @@ from graphs.nodes.rss_collector_node import rss_collector_node
 from graphs.nodes.tavily_collector_node import tavily_collector_node
 from graphs.nodes.github_collector_node import github_collector_node
 from graphs.nodes.newsnow_collector_node import newsnow_collector_node
+from graphs.nodes.agent_reach_collector_node import agent_reach_collector_node
+from graphs.nodes.feedgrab_collector_node import feedgrab_collector_node
 from graphs.nodes.material_merge_node import material_merge_node
 from graphs.nodes.dedup_filter_node import dedup_filter_node
 from graphs.nodes.heat_scorer_node import heat_scorer_node
@@ -58,7 +64,10 @@ from graphs.nodes.feishu_writer_node import feishu_writer_node
 
 
 def _select(state: GlobalState, key: str):
-    """从 GlobalState 取对应节点需要的输入子集。"""
+    """从 GlobalState 取对应节点需要的输入子集。
+
+    过滤 None：state 没传的值用 pydantic 模型的默认值填充，不显式传 None。
+    """
     cls_map = {
         "feishu_table_init": FeishuTableInitInput,
         "aihot_collector": AIHotCollectorInput,
@@ -67,6 +76,8 @@ def _select(state: GlobalState, key: str):
         "tavily_collector": TavilyCollectorInput,
         "github_collector": GitHubCollectorInput,
         "newsnow_collector": NewsNowCollectorInput,
+        "agent_reach_collector": AgentReachCollectorInput,
+        "feedgrab_collector": FeedgrabCollectorInput,
         "material_merge": MaterialMergeInput,
         "dedup_filter": DedupFilterInput,
         "heat_scorer": HeatScorerInput,
@@ -77,9 +88,9 @@ def _select(state: GlobalState, key: str):
         "feishu_writer": FeishuWriterInput,
     }
     cls = cls_map[key]
-    # 从 GlobalState 抽取该节点 Input 需要的字段
-    data = {f: getattr(state, f, None) for f in cls.model_fields.keys()}
-    return cls(**{k: v for k, v in data.items() if v is not None or k in cls.model_fields})
+    # 从 GlobalState 抽取该节点 Input 需要的字段，过滤 None（让默认值生效）
+    data = {f: v for f in cls.model_fields.keys() if (v := getattr(state, f, None)) is not None}
+    return cls(**data)
 
 
 def _wrap(node_name, fn):
@@ -106,6 +117,8 @@ builder.add_node("rss_collector", _wrap("rss_collector", rss_collector_node))
 builder.add_node("tavily_collector", _wrap("tavily_collector", tavily_collector_node))
 builder.add_node("github_collector", _wrap("github_collector", github_collector_node))
 builder.add_node("newsnow_collector", _wrap("newsnow_collector", newsnow_collector_node))
+builder.add_node("agent_reach_collector", _wrap("agent_reach_collector", agent_reach_collector_node))
+builder.add_node("feedgrab_collector", _wrap("feedgrab_collector", feedgrab_collector_node))
 builder.add_node("material_merge", _wrap("material_merge", material_merge_node))
 builder.add_node("dedup_filter", _wrap("dedup_filter", dedup_filter_node))
 builder.add_node("heat_scorer", _wrap("heat_scorer", heat_scorer_node))
@@ -123,9 +136,11 @@ builder.add_edge("feishu_table_init", "rss_collector")
 builder.add_edge("feishu_table_init", "tavily_collector")
 builder.add_edge("feishu_table_init", "github_collector")
 builder.add_edge("feishu_table_init", "newsnow_collector")
+builder.add_edge("feishu_table_init", "agent_reach_collector")
+builder.add_edge("feishu_table_init", "feedgrab_collector")
 
 builder.add_edge(
-    ["aihot_collector", "ainews_collector", "rss_collector", "tavily_collector", "github_collector", "newsnow_collector"],
+    ["aihot_collector", "ainews_collector", "rss_collector", "tavily_collector", "github_collector", "newsnow_collector", "agent_reach_collector", "feedgrab_collector"],
     "material_merge",
 )
 

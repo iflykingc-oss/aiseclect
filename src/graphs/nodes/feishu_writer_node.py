@@ -13,7 +13,7 @@ from urllib.parse import parse_qsl, urlparse, urlunparse
 
 from graphs.state import FeishuWriterInput, FeishuWriterOutput, TweetDraft
 from tools.dedup_state import DedupState
-from tools.feishu_client import FeishuClient
+from feishu_bitable import FeishuClient
 
 logger = logging.getLogger(__name__)
 

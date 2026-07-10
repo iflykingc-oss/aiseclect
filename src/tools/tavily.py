@@ -37,9 +37,18 @@ class TavilyResponse:
 
 
 class TavilyClient:
+    # 占位符 / 明显无效的 key（避免每次启动都打 401 刷屏）
+    _PLACEHOLDER_KEYS = frozenset({
+        "", "tvly-DEV-PLACEHOLDER-replace-with-real-key",
+        "your-key-here", "changeme",
+    })
+
     def __init__(self, api_key: Optional[str] = None, timeout: int = 8):
         self.api_key = api_key or os.getenv("TAVILY_API_KEY", "")
-        if not self.api_key:
+        if self.api_key in self._PLACEHOLDER_KEYS:
+            logger.info("TAVILY_API_KEY 未配置或为占位符，Tavily 搜索跳过（用 feedgrab/rss 等替代）")
+            self.api_key = ""
+        elif not self.api_key:
             logger.warning("TAVILY_API_KEY 未配置，Tavily 搜索将全部返回空结果")
         self.timeout = timeout
         # 短路：第一次遇到 401/403 后不再重试，避免刷屏 + 阻塞整轮流程

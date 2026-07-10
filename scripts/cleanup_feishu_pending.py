@@ -20,7 +20,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from tools.feishu_client import FeishuClient  # noqa: E402
+from feishu_bitable import FeishuClient  # noqa: E402
 
 
 def _normalize_status(value: Any) -> str:

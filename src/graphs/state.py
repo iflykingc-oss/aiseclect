@@ -2,86 +2,22 @@
 工作流状态定义
 - 5 路采集 → 合并 → 去重 → 打分 → 清洗 → 推文生成 → 飞书写入
 - 飞书写入使用 Wiki 内嵌 Bitable（直接 tenant_access_token，不走 Coze）
+
+素材数据模型（RawMaterial / StandardMaterial / ScoredMaterial / TweetDraft）
+已迁移到 collect_pipeline.models，本文件 re-export 保持旧 import 路径可用。
 """
 from __future__ import annotations
 
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
-
-# ========== 素材数据结构 ==========
-
-class RawMaterial(BaseModel):
-    """原始素材数据（采集节点直接产出）"""
-    url: str = Field(..., description="素材链接 URL")
-    title: str = Field(default="", description="素材标题")
-    snippet: str = Field(default="", description="摘要/简介")
-    content: str = Field(default="", description="精读正文（采集时由 Tavily raw_content 填充）")
-    source: str = Field(default="", description="采集来源（aihot/ainews/rss/tavily/github）")
-    publish_time: Optional[str] = Field(default=None, description="发布时间")
-    extra_data: dict = Field(default_factory=dict, description="额外数据")
-
-
-class StandardMaterial(BaseModel):
-    """标准化素材（合并节点产出）"""
-    url: str
-    title: str = ""
-    snippet: str = ""
-    content: str = ""
-    source: str = ""
-    publish_time: Optional[str] = None
-    category: str = "未分类"
-    extra_data: dict = Field(default_factory=dict, description="采集阶段保留的来源元数据")
-
-
-class ScoredMaterial(BaseModel):
-    """打分 + 清洗后的素材"""
-    url: str
-    title: str = ""
-    snippet: str = ""
-    content: str = ""
-    source: str = ""
-    publish_time: Optional[str] = None
-    category: str = "未分类"
-    heat_score: float = 0.0
-    score_reason: str = ""
-    extra_data: dict = Field(default_factory=dict, description="采集阶段保留的来源元数据")
-    related_urls: List[str] = Field(default_factory=list, description="同事件其他来源 URL（聚类后填充）")
-    cluster_size: int = 1
-
-
-class TweetDraft(BaseModel):
-    """内容草稿（X + 小红书）"""
-    unique_id: str
-    url: str
-    title: str = ""
-    category: str = "未分类"
-    heat_score: float = 0.0
-    tweet_content: str = ""              # X 平台内容
-    other_title: str = ""                # 小红书标题（历史字段名保留为 other_* 兼容）
-    other_content: str = ""              # 小红书正文（可由人工复用到其他平台）
-    other_tags: List[str] = Field(default_factory=list)
-    image_prompt: str = ""               # 配图提示词（仅小红书内容需要）
-    platform: str = "X+小红书"            # 发布平台：X+小红书 / 仅X
-    content_angle: str = ""               # 内容角度：risk_alert / tool_use_case / ecosystem_shift 等
-    hook_type: str = ""                   # X 首行 hook 类型
-    platform_reason: str = ""             # 平台分流理由
-    x_quality_score: float = 0.0           # X 内容质量分（0-100）
-    xhs_quality_score: float = 0.0         # 小红书内容质量分（0-100，仅X 时为 0）
-    quality_notes: str = ""               # 质量门禁/重写说明
-    source: str = ""                      # 素材来源，便于飞书审核和复盘
-    score_reason: str = ""                # 热度评分理由
-    discovery_reason: str = ""            # 发现原因：watchlist 命中词 / 来源数 / query 等
-    # 历史兼容字段：新流程不再写入飞书
-    viewpoint: str = ""
-    xiaohongshu_title: str = ""
-    xiaohongshu_content: str = ""
-    xiaohongshu_tags: List[str] = Field(default_factory=list)
-    # Thread 长推预留字段（暂未启用；当 tweet_content 超长/信息密度高时可拆分）
-    is_thread: bool = False
-    thread_parts: List[str] = Field(default_factory=list)
-    status: str = "待审核"
-    generated_at: str = ""
+# 素材模型从 collect_pipeline.models 复用
+from collect_pipeline.models import (  # noqa: F401
+    RawMaterial,
+    StandardMaterial,
+    ScoredMaterial,
+    TweetDraft,
+)
 
 
 # ========== 全局状态 ==========
@@ -99,13 +35,15 @@ class GlobalState(BaseModel):
     feishu_record_ids: List[str] = Field(default_factory=list)
     feishu_table_url: str = Field(default="", description="飞书记录/表格链接（写入后填充）")
 
-    # 5 路采集
+    # 6 路采集
     aihot_materials: List[RawMaterial] = Field(default_factory=list)
     ainews_materials: List[RawMaterial] = Field(default_factory=list)
     rss_materials: List[RawMaterial] = Field(default_factory=list)
     tavily_materials: List[RawMaterial] = Field(default_factory=list)
     github_materials: List[RawMaterial] = Field(default_factory=list)
     newsnow_materials: List[RawMaterial] = Field(default_factory=list)
+    agent_reach_materials: List[RawMaterial] = Field(default_factory=list, description="Agent-Reach CLI 采集（可选第 7 路）")
+    feedgrab_materials: List[RawMaterial] = Field(default_factory=list, description="FeedGrab CLI 采集（可选第 8 路，mpweixin/xhs/ytb/reddit 等）")
 
     # 中间结果
     merged_materials: List[StandardMaterial] = Field(default_factory=list)
@@ -219,6 +157,26 @@ class NewsNowCollectorOutput(BaseModel):
     newsnow_materials: List[RawMaterial] = Field(default_factory=list)
 
 
+class AgentReachCollectorInput(BaseModel):
+    max_per_source: int = 10
+    platform: str = "web"
+    queries: List[str] = Field(default_factory=list, description="URL 或搜索关键词列表")
+
+
+class AgentReachCollectorOutput(BaseModel):
+    agent_reach_materials: List[RawMaterial] = Field(default_factory=list)
+
+
+class FeedgrabCollectorInput(BaseModel):
+    max_per_source: int = 10
+    platform: str = "mpweixin-id"
+    queries: List[str] = Field(default_factory=list, description="关键词 / 用户名 / URL 等传给 feedgrab")
+
+
+class FeedgrabCollectorOutput(BaseModel):
+    feedgrab_materials: List[RawMaterial] = Field(default_factory=list)
+
+
 class MaterialMergeInput(BaseModel):
     aihot_materials: List[RawMaterial] = Field(default_factory=list)
     ainews_materials: List[RawMaterial] = Field(default_factory=list)
@@ -226,6 +184,8 @@ class MaterialMergeInput(BaseModel):
     tavily_materials: List[RawMaterial] = Field(default_factory=list)
     github_materials: List[RawMaterial] = Field(default_factory=list)
     newsnow_materials: List[RawMaterial] = Field(default_factory=list)
+    agent_reach_materials: List[RawMaterial] = Field(default_factory=list)
+    feedgrab_materials: List[RawMaterial] = Field(default_factory=list)
 
 
 class MaterialMergeOutput(BaseModel):
