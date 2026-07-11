@@ -72,6 +72,14 @@ def write_tweets(
                 "hook_type": d.get("hook_type"),
                 "x_quality_score": d.get("x_quality_score"),
                 "xhs_quality_score": d.get("xhs_quality_score"),
+                "xhs_pillar": d.get("xhs_pillar"),
+                "xhs_note_structure": d.get("xhs_note_structure"),
+                "xhs_title_pattern_key": d.get("xhs_title_pattern_key"),
+                "xhs_search_score": d.get("xhs_search_score"),
+                "xhs_save_score": d.get("xhs_save_score"),
+                "xhs_beginner_score": d.get("xhs_beginner_score"),
+                "xhs_series_score": d.get("xhs_series_score"),
+                "xhs_growth_notes": d.get("xhs_growth_notes"),
                 "quality_notes": d.get("quality_notes"),
                 "tweet_preview": (d.get("tweet_content") or "")[:120],
                 "xhs_title": d.get("other_title"),
@@ -81,6 +89,45 @@ def write_tweets(
     }
     with report_path.open("w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
+
+    growth_path = out_dir / f"xhs_growth_report_{ts}.json"
+    pillar_distribution: dict[str, int] = {}
+    title_pattern_distribution: dict[str, int] = {}
+    pillar_scores: dict[str, list[float]] = {}
+    growth_items: list[dict[str, Any]] = []
+    for d in payload["tweets"]:
+        pillar = d.get("xhs_pillar") or "unknown"
+        pattern = d.get("xhs_title_pattern_key") or "unknown"
+        pillar_distribution[pillar] = pillar_distribution.get(pillar, 0) + 1
+        title_pattern_distribution[pattern] = title_pattern_distribution.get(pattern, 0) + 1
+        pillar_scores.setdefault(pillar, []).append(float(d.get("xhs_quality_score") or 0.0))
+        growth_items.append({
+            "unique_id": d.get("unique_id"),
+            "url": d.get("url"),
+            "title": d.get("title"),
+            "platform": d.get("platform"),
+            "xhs_pillar": d.get("xhs_pillar"),
+            "xhs_note_structure": d.get("xhs_note_structure"),
+            "xhs_title_pattern_key": d.get("xhs_title_pattern_key"),
+            "xhs_search_score": d.get("xhs_search_score"),
+            "xhs_save_score": d.get("xhs_save_score"),
+            "xhs_beginner_score": d.get("xhs_beginner_score"),
+            "xhs_series_score": d.get("xhs_series_score"),
+            "xhs_quality_score": d.get("xhs_quality_score"),
+            "xhs_growth_notes": d.get("xhs_growth_notes"),
+        })
+    growth_report = {
+        "generated_at": generated_at,
+        "count": len(drafts),
+        "pillar_distribution": pillar_distribution,
+        "title_pattern_distribution": title_pattern_distribution,
+        "pillar_avg_xhs_score": {
+            k: round(sum(v) / len(v), 2) if v else 0.0 for k, v in pillar_scores.items()
+        },
+        "items": growth_items,
+    }
+    with growth_path.open("w", encoding="utf-8") as f:
+        json.dump(growth_report, f, ensure_ascii=False, indent=2)
 
     reject_path = out_dir / f"reject_report_{ts}.json"
 
@@ -123,6 +170,7 @@ def write_tweets(
 
     logger.info(f"推文草稿已写入: {path} ({len(drafts)} 条)")
     logger.info(f"质量报告已写入: {report_path}")
+    logger.info(f"小红书起号报告已写入: {growth_path}")
     logger.info(
         f"拒绝报告已写入: {reject_path} ({len(rejects)} 条, "
         f"分布 {', '.join(f'{k}={v}' for k, v in sorted(kind_stats.items(), key=lambda kv: -kv[1]))})"

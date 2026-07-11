@@ -97,6 +97,14 @@ def _build_records(drafts: List[TweetDraft], existing_links: set[str] | None = N
                     "素材来源": d.source,
                     "发布平台": platform,
                     "处理状态": _normalize_status(d.status),
+                    "起号定位": d.xhs_pillar,
+                    "笔记结构": d.xhs_note_structure,
+                    "标题模板": d.xhs_title_pattern_key,
+                    "搜索分": d.xhs_search_score,
+                    "收藏分": d.xhs_save_score,
+                    "新手分": d.xhs_beginner_score,
+                    "系列分": d.xhs_series_score,
+                    "起号备注": d.xhs_growth_notes,
                     # 审核备注创建时留空，等运营手动填
                     "创建时间": now_ms,
                 }

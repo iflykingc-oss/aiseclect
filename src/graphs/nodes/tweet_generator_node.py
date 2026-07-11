@@ -23,6 +23,13 @@ from typing import Any, Dict, List, Tuple
 
 from jinja2 import Template
 
+from collect_pipeline.growth_taxonomy import (
+    assign_note_structure,
+    assign_pillar,
+    assign_title_pattern_key,
+    score_xhs_dimensions,
+    summarize_growth_scores,
+)
 from collect_pipeline.humanizer import humanize_draft
 from graphs.state import (
     ScoredMaterial,
@@ -808,6 +815,10 @@ def _build_draft(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) -> T
         data["platform"] = PLATFORM_ONLY_X
 
     angle = _normalize_angle(data.get("content_angle") or _infer_angle(mat, strategy))
+    growth_taxonomy = ((strategy.get("xiaohongshu") or {}).get("growth_taxonomy") or {})
+    xhs_pillar = assign_pillar(mat, growth_taxonomy)
+    xhs_note_structure = assign_note_structure(xhs_pillar, growth_taxonomy)
+    xhs_title_pattern_key = assign_title_pattern_key(xhs_pillar, growth_taxonomy)
     x_quality_score, x_quality_notes = _score_x_quality(mat, data, strategy)
     x_pass_score = float((strategy.get("x") or {}).get("pass_score", 75))
     ok_x, reason_x = _quality_check_x(mat, data, strategy)
@@ -824,6 +835,11 @@ def _build_draft(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) -> T
     image_prompt = (data.get("image_prompt") or "").strip()
     xhs_quality_score = 0.0
     xhs_quality_notes = "仅X"
+    xhs_search_score = 0.0
+    xhs_save_score = 0.0
+    xhs_beginner_score = 0.0
+    xhs_series_score = 0.0
+    xhs_growth_notes = "仅X"
 
     if platform == PLATFORM_GENERAL:
         xhs_quality_score, xhs_quality_notes = _score_xhs_quality({
@@ -833,6 +849,20 @@ def _build_draft(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) -> T
             "image_prompt": image_prompt,
         }, strategy)
         xhs_pass_score = float((strategy.get("xiaohongshu") or {}).get("pass_score", 80))
+        growth_data = {
+            "tweet_content": tweet,
+            "other_title": other_title,
+            "other_content": other_content,
+            "other_tags": other_tags,
+            "image_prompt": image_prompt,
+            "xhs_pillar": xhs_pillar,
+        }
+        growth_scores = score_xhs_dimensions(growth_data, mat, growth_taxonomy)
+        xhs_search_score = growth_scores["xhs_search_score"][0]
+        xhs_save_score = growth_scores["xhs_save_score"][0]
+        xhs_beginner_score = growth_scores["xhs_beginner_score"][0]
+        xhs_series_score = growth_scores["xhs_series_score"][0]
+        xhs_growth_notes = summarize_growth_scores(growth_scores)
         ok_other, reason_other = _quality_check_other({
             "other_title": other_title,
             "other_content": other_content,
@@ -866,7 +896,15 @@ def _build_draft(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) -> T
         platform_reason=str(data.get("platform_reason") or ("适合小红书" if platform == PLATFORM_GENERAL else "硬技术/圈层内容，仅X更合适")),
         x_quality_score=x_quality_score,
         xhs_quality_score=xhs_quality_score,
-        quality_notes=" | ".join([x_quality_notes, xhs_quality_notes, tone_note]).strip(" |"),
+        quality_notes=" | ".join([x_quality_notes, xhs_quality_notes, tone_note, f"growth={xhs_pillar}/{xhs_title_pattern_key}: {xhs_growth_notes}"]).strip(" |"),
+        xhs_pillar=xhs_pillar,
+        xhs_note_structure=xhs_note_structure,
+        xhs_title_pattern_key=xhs_title_pattern_key,
+        xhs_search_score=xhs_search_score,
+        xhs_save_score=xhs_save_score,
+        xhs_beginner_score=xhs_beginner_score,
+        xhs_series_score=xhs_series_score,
+        xhs_growth_notes=xhs_growth_notes,
         source=mat.source,
         score_reason=mat.score_reason,
         discovery_reason=_discovery_reason(mat),

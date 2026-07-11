@@ -78,6 +78,15 @@ class TweetDraft(BaseModel):
     discovery_reason: str = ""
     status: str = "待审核"
     generated_at: str = ""
+    # === 小红书起号策略元数据（只服务审核/复盘，不参与自动发布） ===
+    xhs_pillar: str = ""
+    xhs_note_structure: str = ""
+    xhs_title_pattern_key: str = ""
+    xhs_search_score: float = 0.0
+    xhs_save_score: float = 0.0
+    xhs_beginner_score: float = 0.0
+    xhs_series_score: float = 0.0
+    xhs_growth_notes: str = ""
     # === 以下字段为历史遗留 / 未来预留，新代码不要写入 ===
     viewpoint: str = ""                              # LEGACY: 早期流程使用
     xiaohongshu_title: str = ""                      # LEGACY: 已被 other_title 替代

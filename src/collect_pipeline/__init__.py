@@ -12,6 +12,15 @@
 - **可选 langgraph** —— 想要 DAG 风格编排（断点 / 可视化 / 并行）时单独 import dag 子模块
 """
 from .models import RawMaterial, StandardMaterial, ScoredMaterial, TweetDraft
+from .growth_taxonomy import (
+    assign_note_structure,
+    assign_pillar,
+    assign_title_pattern_key,
+    load_growth_taxonomy,
+    pillar_weight_overrides,
+    score_xhs_dimensions,
+    summarize_growth_scores,
+)
 from .dedup import CrossRunDedup
 from .persistence import (
     persist_materials,
@@ -33,6 +42,14 @@ __all__ = [
     "StandardMaterial",
     "ScoredMaterial",
     "TweetDraft",
+    # 小红书起号策略
+    "assign_note_structure",
+    "assign_pillar",
+    "assign_title_pattern_key",
+    "load_growth_taxonomy",
+    "pillar_weight_overrides",
+    "score_xhs_dimensions",
+    "summarize_growth_scores",
     # 去重
     "CrossRunDedup",
     # 落盘

@@ -106,7 +106,49 @@
       "xhs_tone": 10,
       "cover_prompt_quality": 5
     },
-    "pass_score": 80
+    "pass_score": 80,
+    "growth_taxonomy": {
+      "pillars": [
+        {"key": "tutorial", "name": "教程型", "title_pattern": "教程型", "note_structure": "hook + step_list + copy_action", "weight_hint": 1.1},
+        {"key": "spell", "name": "咒语型", "title_pattern": "咒语型", "note_structure": "hook + prompt_block + tweak_notes", "weight_hint": 1.1},
+        {"key": "alternative", "name": "平替型", "title_pattern": "平替型", "note_structure": "hook + comparison_table + verdict", "weight_hint": 1.05},
+        {"key": "review", "name": "测评型", "title_pattern": "测评型", "note_structure": "hook + 7day_log + pros_cons", "weight_hint": 1.0},
+        {"key": "workflow", "name": "流程型", "title_pattern": "流程型", "note_structure": "hook + 5step_flow + tool_stack", "weight_hint": 1.05},
+        {"key": "risk_alert", "name": "避坑型", "title_pattern": "避坑型", "note_structure": "hook + red_flags + safe_alt", "weight_hint": 1.15},
+        {"key": "cost_change", "name": "价格型", "title_pattern": "结果型", "note_structure": "hook + price_table + decision_rule", "weight_hint": 1.05},
+        {"key": "news_commentary", "name": "资讯评论型", "title_pattern": "结果型", "note_structure": "hook + what_happened + who_cares", "weight_hint": 0.95},
+        {"key": "lifestyle", "name": "生活方式种草", "title_pattern": "人群型", "note_structure": "hook + scene + price + fit", "weight_hint": 0.95}
+      ],
+      "title_patterns_by_pillar": {
+        "tutorial": ["5 步教你...", "3 分钟学会..."],
+        "spell": ["这一句 prompt 直接抄", "一句咒语..."],
+        "alternative": ["涨价后这 N 个免费替代", "平替推荐：..."],
+        "review": ["我把 N 个 AI 工具都用了一周", "实测 N 天：..."],
+        "workflow": ["AI 自动帮我做完这 N 件事", "一天工作流：..."],
+        "risk_alert": ["这类 AI 工具别急着付费", "先看这 N 点再下单"],
+        "cost_change": ["我会优先关注这类 AI 产品", "涨价/降价后..."],
+        "news_commentary": ["一句话说清这次更新", "普通用户怎么看..."],
+        "lifestyle": ["打工人用 AI 前先看这 N 点", "学生党/创作者..."]
+      },
+      "scoring_dimensions": {
+        "title_clickability": {"weight": 25, "pillar_boost": {"spell": 5, "risk_alert": 5}},
+        "search_keyword_fit": {"weight": 20, "pillar_boost": {"tutorial": 3, "review": 3}},
+        "scenario_relevance": {"weight": 20, "pillar_boost": {"workflow": 4, "lifestyle": 4}},
+        "practical_value": {"weight": 20, "pillar_boost": {"tutorial": 5, "spell": 5}},
+        "xhs_tone": {"weight": 10, "pillar_boost": {}},
+        "cover_prompt_quality": {"weight": 5, "pillar_boost": {}}
+      },
+      "assignment_rules": {
+        "spell_keywords": ["prompt", "咒语", "提示词", "提问", "模板", "一句话", "直接抄", "写法"],
+        "tutorial_keywords": ["教程", "3 步", "5 步", "三步", "五步", "步骤", "新手", "入门", "怎么用", "如何用", "上手"],
+        "alternative_keywords": ["平替", "替代", "免费", "涨价", "降价", "订阅", "对比", "vs", "哪个好"],
+        "risk_alert_keywords": ["避坑", "风险", "隐私", "安全", "权限", "泄露", "下架", "翻车", "小心", "封禁", "别"],
+        "cost_change_keywords": ["价格", "订阅", "涨价", "降价", "额度", "免费", "付费", "成本", "订阅攻略"],
+        "workflow_keywords": ["工作流", "自动化", "一键", "流程", "5 件事", "N 件事", "Make", "Zapier", "n8n"],
+        "lifestyle_keywords": ["智能眼镜", "耳机", "音箱", "陪伴", "留学", "翻译", "旅行", "头像", "写真"],
+        "review_keywords": ["测评", "实测", "用了", "对比", "横评", "榜单"]
+      }
+    }
   },
   "angles": {
     "breaking_news": ["发布", "上线", "开放", "推出", "更新", "release", "launch"],
