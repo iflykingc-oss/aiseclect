@@ -195,6 +195,12 @@ def score_xhs_dimensions(data: dict[str, Any], mat: Any, taxonomy: dict[str, Any
     if pillar in {"tutorial", "spell", "workflow", "review", "risk_alert"}:
         series_score = min(100.0, series_score + 10)
 
+    boosts = pillar_weight_overrides(pillar, taxonomy)
+    search_score = min(100.0, search_score + boosts.get("search_keyword_fit", 0))
+    save_score = min(100.0, save_score + boosts.get("practical_value", 0) + boosts.get("title_clickability", 0))
+    beginner_score = min(100.0, beginner_score + boosts.get("scenario_relevance", 0))
+    series_score = min(100.0, series_score + boosts.get("cover_prompt_quality", 0))
+
     return {
         "xhs_search_score": (round(search_score, 2), f"搜索词命中 {search_hits}"),
         "xhs_save_score": (round(save_score, 2), f"收藏信号命中 {save_hits}"),
