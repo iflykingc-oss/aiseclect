@@ -113,6 +113,73 @@
       ],
       "keywords": ["普通人", "教程", "免费", "小白", "入门", "一键", "朋友圈", "公众号", "短视频", "翻唱", "修图", "PPT", "打工人"],
       "github_query": "ai-video-generator OR ai-ppt OR suno OR midjourney-bot OR ai-photo-enhancer OR ai-avatar OR ai-pptx"
+    },
+    {
+      "name": "ai_hardware_consumer",
+      "enabled": true,
+      "max_results": 8,
+      "queries": [
+        "Apple Intelligence 新功能 更新 实测",
+        "Galaxy AI 三星 S25 评测",
+        "小米 HyperAI 澎湃 AI 新功能",
+        "OPPO AI ColorOS AI 修图",
+        "vivo AI OriginOS AI 助手",
+        "HarmonyOS AI 华为智慧助手",
+        "Copilot+ PC AI 笔记本 新品",
+        "AI 眼镜 Ray-Ban Meta 评测",
+        "AI 翻译耳机 出国",
+        "Pixel AI Gemini Nano"
+      ],
+      "keywords": [
+        "apple intelligence", "apple ai", "galaxy ai", "xiaomi ai", "小爱同学",
+        "oppo ai", "coloros ai", "vivo ai", "originos ai", "harmonyos ai",
+        "鸿蒙 ai", "华为智慧助手", "pixel ai", "gemini nano",
+        "copilot+", "ai pc", "ai 笔记本", "ai 平板", "ai 眼镜", "ai 耳机",
+        "ai 音箱", "ai 摄像头", "ai 翻译耳机", "ai 陪伴", "ai 学习机",
+        "ai 拍照", "ai 修图", "ai 通话", "ai 摘要", "ai 助手",
+        "ai 语音", "ai 字幕", "ai 实时翻译", "ai 抠图"
+      ],
+      "github_query": "(apple-intelligence OR galaxy-ai OR harmonyos-ai OR copilot-plus OR ai-glasses OR ai-headphones OR ai-camera OR ai-translator OR ai-companion) OR (xiaomi-ai OR oppo-ai OR vivo-ai)"
+    },
+    {
+      "name": "ai_software_apps",
+      "enabled": true,
+      "max_results": 8,
+      "queries": [
+        "Notion AI 新功能 更新 评测",
+        "Microsoft 365 Copilot 新功能 价格",
+        "Office Copilot Wave 2 更新",
+        "Adobe Firefly 新功能 商用",
+        "Photoshop AI Generative Fill 评测",
+        "Canva AI Magic Studio 新功能",
+        "Figma AI 设计 更新",
+        "Slack AI 总结 新功能",
+        "Zoom AI Companion 更新",
+        "Otter.ai 会议记录 AI 评测",
+        "Grammarly AI 写作助手",
+        "钉钉 AI 智能助手 更新",
+        "飞书 AI 智能伙伴 评测",
+        "企业微信 AI 助手",
+        "WPS AI 2.0 新功能",
+        "腾讯文档 AI 智能助手",
+        "Salesforce Einstein AI 新功能",
+        "Atlassian Rovo AI 团队"
+      ],
+      "keywords": [
+        "notion ai", "microsoft copilot", "office copilot", "microsoft 365 copilot",
+        "adobe firefly", "firefly", "photoshop ai", "illustrator ai", "adobe sensei",
+        "canva ai", "figma ai", "slack ai", "zoom ai", "zoom ai companion",
+        "otter.ai", "otter ai", "grammarly", "jasper", "jasper ai", "quillbot",
+        "motion ai", "reclaim ai", "mem ai",
+        "钉钉 ai", "飞书 ai", "飞书智能伙伴", "企微 ai", "企业微信 ai",
+        "wps ai", "腾讯文档 ai", "百度如流", "通义晓蜜", "chatppt",
+        "salesforce einstein", "einstein ai", "servicenow ai", "hubspot ai",
+        "zendesk ai", "atlassian rovo", "rovo ai", "duet ai",
+        "google workspace ai", "gemini for workspace",
+        "ai 助手", "ai 写作", "ai 总结", "ai 翻译软件", "ai 录音",
+        "ai 办公", "ai 笔记", "ai 会议", "ai 转写"
+      ],
+      "github_query": "(notion-ai OR microsoft-copilot OR office-copilot OR adobe-firefly OR canva-ai OR figma-ai OR slack-ai OR zoom-ai OR grammarly OR jasper-ai OR otter-ai OR quillbot) OR (wps-ai OR feishu-ai OR dingtalk-ai OR salesforce-einstein OR servicenow-ai OR hubspot-ai)"
     }
   ]
 }

@@ -1,5 +1,12 @@
 """
 AI 热度打分节点 - LLM（OpenAI 兼容）评分；支持降级
+
+设计要点：
+- 双路并行严闸门：heat_scorer LLM 输出 ai_topic_relevant；
+                   ai_classify LLM 专门输出 ai_relevance (core/adjacent/peripheral|none)。
+                   必须两者都判 AI 才算通过（normal path）。
+- 缺数据默认值改为 False / "none"，避免 LLM 漏标时被默认放行。
+- fallback 路径（LLM 完全失败）保留 AI 关键词软提示，覆盖主流 AI 公司/产品名。
 """
 from __future__ import annotations
 
@@ -23,10 +30,10 @@ from tools.llm import (
 logger = logging.getLogger(__name__)
 
 
-# 受众桶打分偏置：让大众向（NewsNow/产品/热搜）更容易进 top 12，技术向（GitHub/watchlist/论文）封顶
+# 受众桶打分偏置：tech 提分（AI/技术向），general 不再加分（避免 NewsNow 大众源挤占名额）
 AUDIENCE_BIAS = {
-    "general": 10.0,
-    "tech": -8.0,
+    "general": 0.0,
+    "tech": 6.0,
     "neutral": 0.0,
 }
 CATEGORY_TO_BUCKET = {
@@ -42,6 +49,57 @@ GENERAL_SOURCE_TAGS = (
     "newsnow-ithome", "newsnow-sspai", "newsnow-coolapk",
 )
 TECH_SOURCE_TAGS = ("github", "watchlist", "ainews", "ai-models", "official_ai")
+
+# fallback 路径（LLM 完全失败）使用的 AI 关键词软提示。
+# 仅在 _fallback_score 内使用，不参与正常 LLM 路径。覆盖主流模型/工具/产品名。
+_AI_FALLBACK_KEYWORDS = (
+    # 国外模型
+    "ai", "a.i.", "llm", "gpt", "chatgpt", "claude", "sonnet", "opus", "haiku",
+    "gemini", "grok", "mistral", "llama", "deepseek", "qwen", "kimi",
+    "command", "cohere", "perplexity", "huggingface", "deepmind",
+    "openai", "anthropic", "sensenova", "stepfun", "yi", "minimax",
+    # 国内模型/产品
+    "豆包", "元宝", "通义", "文心", "千问", "kimi", "智谱", "月之暗面", "百川",
+    "moonshot", "zhipu", "wenxin", "doubao", "yuanbao", "tongyi",
+    # AI 创作
+    "midjourney", "sora", "runway", "pika", "hailuo", "kling", "jimeng",
+    "可灵", "即梦", "海螺", "suno", "udio", "dall-e", "dalle", "stable diffusion",
+    "comfyui", "comfy ui", "sora 2",
+    # AI 开发工具
+    "cursor", "windsurf", "trae", "devin", "manus", "bolt", "lovable", "v0",
+    "replit", "cline", "continue", "copilot", "codex", "claude code",
+    "langchain", "langgraph", "llamaindex", "pydantic", "autogen",
+    # AI 概念词
+    "prompt", "咒语", "智能体", "agent", "mcp", "rag", "向量", "向量化",
+    "大模型", "agi", "世界模型", "llm", "智能", "人工智能",
+    "machine learning", "deep learning", "transformer", "diffusion",
+    "embedding", "finetune", "微调", "推理", "training",
+    # AI 手机 / 手机 AI 功能（重要：边缘 AI 的核心场景）
+    "apple intelligence", "apple ai", "galaxy ai", "xiaomi ai",
+    "小爱同学", "小爱", "oppo ai", "coloros ai", "vivo ai", "originos ai",
+    "harmonyos ai", "鸿蒙 ai", "华为智慧助手", "yoyo",
+    "pixel ai", "gemini nano", "copilot+", "copilot plus",
+    "ai pc", "ai 笔记本", "ai 平板", "ai 眼镜", "ai 耳机", "ai 音箱",
+    "ai 摄像头", "ai 翻译耳机", "ai 陪伴", "ai 玩具", "ai 学习机",
+    "ai 路由器", "ai 录音", "ai 字幕", "ai 实时翻译",
+    # 数码产品里的 AI 功能（即使是子功能也算 AI 主线）
+    "ai 拍照", "ai 修图", "ai 通话", "ai 摘要", "ai 翻译",
+    "ai 助手", "ai 语音", "ai 搜索", "ai 抠图", "ai 去水印",
+    # AI 软件 / 传统软件集成的 AI 功能
+    "notion ai", "microsoft copilot", "office copilot", "microsoft 365 copilot",
+    "adobe firefly", "firefly", "photoshop ai", "illustrator ai",
+    "adobe sensei", "canva ai", "figma ai", "slack ai", "zoom ai",
+    "zoom ai companion", "otter.ai", "otter ai", "grammarly", "jasper",
+    "jasper ai", "quillbot", "motion ai", "reclaim ai", "mem ai",
+    # 国产办公 AI / 企业 SaaS AI
+    "钉钉 ai", "飞书 ai", "飞书智能伙伴", "企微 ai", "企业微信 ai",
+    "wps ai", "腾讯文档 ai", "百度如流", "通义晓蜜", "chatppt",
+    "salesforce einstein", "einstein ai", "servicenow ai", "hubspot ai",
+    "zendesk ai", "atlassian rovo", "rovo ai", "duet ai",
+    "google workspace ai", "gemini for workspace",
+    # 通用 AI 软件产品词
+    "ai 助手", "ai 写作", "ai 总结", "ai 翻译软件", "ai 录音",
+)
 
 
 def _audience_bias(category: Optional[str], source: Optional[str]) -> float:
@@ -62,7 +120,7 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
     if not state.deduplicated_materials:
         return HeatScorerOutput(scored_materials=[], high_score_count=0)
 
-    # 读取 LLM cfg（带 env 覆盖）
+    # 读取 heat_scorer LLM cfg（带 env 覆盖）
     workspace = os.getenv("COZE_WORKSPACE_PATH", os.getcwd())
     try:
         cfg = load_llm_cfg("config/heat_scorer_llm_cfg.json", workspace_path=workspace)
@@ -71,6 +129,18 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
         cfg = {"sp": "你是 AI 资讯热度评估专家。", "up": "素材: {{materials_json}}", "config": {}}
 
     llm_cfg = LLMConfig.from_env(default_model="gpt-4o-mini").merged(cfg.get("config", {}))
+
+    # 读取 ai_classify LLM cfg（双路并行的第二路）
+    try:
+        classify_cfg = load_llm_cfg("config/ai_classify_llm_cfg.json", workspace_path=workspace)
+    except FileNotFoundError:
+        logger.warning("ai_classify cfg 找不到，ai_relevance 将全部默认为 'none'")
+        classify_cfg = None
+    classify_llm_cfg = (
+        LLMConfig.from_env(default_model="gpt-4o-mini").merged(classify_cfg.get("config", {}))
+        if classify_cfg
+        else None
+    )
 
     materials_data = [
         {
@@ -86,7 +156,13 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
         for m in state.deduplicated_materials
     ]
     materials_json = json.dumps(materials_data, ensure_ascii=False, indent=2)
+
     user_prompt = Template(cfg.get("up", "")).render(materials_json=materials_json)
+    classify_user_prompt = (
+        Template(classify_cfg.get("up", "")).render(materials_json=materials_json)
+        if classify_cfg
+        else None
+    )
 
     def _rule_score(m: StandardMaterial) -> float:
         text = " ".join([m.title or "", m.snippet or "", m.content or "", m.source or "", m.category or ""]).lower()
@@ -98,8 +174,7 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
             score = max(score, 62.0)
         if any(k in text for k in ("漏洞", "cve", "泄露", "下架", "breaking change")):
             score += 8.0
-        # NewsNow 中文大众向 source 加 base 分（之前 GitHub watchlist 占 80%+，
-        # NewsNow 中文热榜素材被打到 0 分进不了高分池，被 LLM 看到的机会很少）
+        # NewsNow 中文大众向 source 加 base 分（保持热榜素材有底分；偏置由 AUDIENCE_BIAS 拉回）
         newsnow_consumer_ids = {
             "weibo", "zhihu", "bilibili", "baidu", "douyin", "tieba",
             "thepaper", "ithome", "sspai", "producthunt", "coolapk",
@@ -107,7 +182,7 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
         extra = m.extra_data or {}
         ns_id = str(extra.get("newsnow_source") or "")
         if ns_id in newsnow_consumer_ids:
-            score = max(score, 80.0)  # 提分到 80，覆盖 LLM 给普通热点的低打分
+            score = max(score, 80.0)
         # hackernews / solidot / v2ex / 财经类大众度低一档
         newsnow_secondary_ids = {
             "hackernews", "v2ex", "solidot", "cls", "wallstreetcn",
@@ -127,55 +202,67 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
             score += 5.0
         return min(score, 85.0) if score else 0.0
 
-    def _final_score(llm_score: float, m: StandardMaterial, topic_relevant: bool = True) -> float:
-        # AI 主题闸门：LLM 判定非 AI 主题时直接 0 分，不进入推文生成
+    def _final_score(llm_score: float, m: StandardMaterial, topic_relevant: bool = False) -> float:
+        # AI 主题闸门（双路并行严闸门结果）
         if not topic_relevant:
             return 0.0
         base = max(llm_score, _rule_score(m))
         return max(0.0, min(100.0, base + _audience_bias(m.category, m.source))) if base else 0.0
 
-    def _fallback_score(m: StandardMaterial, topic_relevant: bool = True) -> float:
-        # LLM 调用失败时按规则分保底；如果 LLM 明确说非 AI 主题，再做一次关键词兜底
-        if not topic_relevant:
-            text_ai = " ".join([m.title or "", m.snippet or "", m.content or ""]).lower()
-            ai_signal = any(
-                k in text_ai for k in (
-                    "ai", "llm", "gpt", "claude", "gemini", "豆包", "通义", "kim", "文心",
-                    "可灵", "即梦", "midjourney", "suno", "sora", "dall-e",
-                    "prompt", "咒语", "智能", "大模型", "agent", "mcp", "cursor",
-                    "openai", "anthropic", "deepmind", "huggingface", "copilot",
-                    "文心", "kimi", "千问", "通义", "元宝",
-                )
-            ) or "watchlist" in (m.source or "") or "practical" in (m.source or "")
-            if not ai_signal:
-                return 0.0
-        # fallback 路径（LLM 完全失败）：也做一次 AI 关键词检测，避免规则加分把娱乐/体育送进飞书
-        text_all = " ".join([m.title or "", m.snippet or "", m.content or "", m.source or "", m.category or ""]).lower()
+    def _fallback_score(m: StandardMaterial) -> float:
+        """LLM 完全失败时按规则分保底。AI 关键词软提示覆盖主流 AI 公司/产品名。"""
+        text_all = " ".join([
+            m.title or "", m.snippet or "", m.content or "",
+            m.source or "", m.category or "",
+        ]).lower()
         ai_baseline = any(
-            k in text_all for k in (
-                "ai", "llm", "gpt", "claude", "gemini", "豆包", "通义", "kimi", "文心",
-                "可灵", "即梦", "midjourney", "suno", "sora", "dall-e",
-                "prompt", "咒语", "智能", "大模型", "agent", "mcp", "cursor",
-                "openai", "anthropic", "deepmind", "huggingface", "copilot",
-                "千问", "元宝", "chatgpt",
-            )
-        ) or "watchlist" in (m.source or "") or "practical" in (m.source or "") or "ainews" in (m.source or "") or "aihot" in (m.source or "")
+            k in text_all for k in _AI_FALLBACK_KEYWORDS
+        ) or "watchlist" in (m.source or "") or "practical" in (m.source or "") \
+            or "ainews" in (m.source or "") or "aihot" in (m.source or "")
         if not ai_baseline:
             return 0.0
         base = max(50.0, _rule_score(m))
         return max(0.0, min(100.0, base + _audience_bias(m.category, m.source)))
 
-    # 调 LLM（失败则降级）
+    # ===== 双路并行 LLM 调用（顺序执行避免并发风险）=====
+    # 路 1：heat_scorer（评分 + ai_topic_relevant）
+    score_results: list = []
+    heat_call_ok = False
+    heat_call_err = None
     try:
-        model = build_chat_model(llm_cfg)
         from langchain_core.messages import SystemMessage, HumanMessage
-
+        model = build_chat_model(llm_cfg)
         messages = [SystemMessage(content=cfg.get("sp", "")), HumanMessage(content=user_prompt)]
         resp = invoke_with_retry(model, messages)
         text = extract_text(resp.content)
         score_results = extract_json_array(text)
+        heat_call_ok = True
     except Exception as e:
-        logger.error(f"热度打分失败，按规则分降级: {e}")
+        heat_call_err = e
+        logger.error(f"热度打分 LLM 调用失败，按规则分降级: {e}")
+
+    # 路 2：ai_classify（专门判 AI 相关性）
+    classify_results: list = []
+    classify_call_ok = False
+    classify_call_err = None
+    if classify_cfg and classify_llm_cfg:
+        try:
+            from langchain_core.messages import SystemMessage, HumanMessage
+            classify_model = build_chat_model(classify_llm_cfg)
+            classify_messages = [
+                SystemMessage(content=classify_cfg.get("sp", "")),
+                HumanMessage(content=classify_user_prompt),
+            ]
+            classify_resp = invoke_with_retry(classify_model, classify_messages)
+            classify_text = extract_text(classify_resp.content)
+            classify_results = extract_json_array(classify_text)
+            classify_call_ok = True
+        except Exception as e:
+            classify_call_err = e
+            logger.error(f"ai_classify LLM 调用失败，ai_relevance 全部按 'none' 处理: {e}")
+
+    # ===== 路径 1：LLM 完全失败 → fallback_score =====
+    if not heat_call_ok:
         scored = [
             ScoredMaterial(
                 url=m.url,
@@ -185,9 +272,9 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
                 source=m.source,
                 publish_time=m.publish_time,
                 category=m.category,
-                extra_data=m.extra_data,
+                extra_data={**(m.extra_data or {}), "ai_relevance": "none", "ai_subtopic": "other"},
                 heat_score=_fallback_score(m),
-                score_reason=f"LLM 调用失败，使用规则分: {e}",
+                score_reason=f"LLM 调用失败，使用规则分: {heat_call_err}",
             )
             for m in state.deduplicated_materials
         ]
@@ -197,32 +284,57 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
             total_after_score=len(scored),
         )
 
-    # 关联 url -> score
+    # ===== 路径 2：heat_scorer 成功 → 用双路并行严闸门 =====
     score_map = {}
-    topic_relevant_map = {}
-    reason_map = {}
+    heat_topic_map = {}     # url -> bool (ai_topic_relevant)
+    heat_reason_map = {}    # url -> str (score_reason)
     for item in score_results:
         if isinstance(item, dict) and item.get("url"):
             try:
                 score_map[item["url"]] = float(item.get("heat_score", 0) or 0)
             except (TypeError, ValueError):
                 pass
-            topic_relevant_map[item["url"]] = bool(item.get("ai_topic_relevant", True))
-            reason_map[item["url"]] = str(item.get("score_reason", ""))
+            heat_topic_map[item["url"]] = bool(item.get("ai_topic_relevant", True))
+            heat_reason_map[item["url"]] = str(item.get("score_reason", ""))
+
+    classify_relevance_map = {}   # url -> str (core|adjacent|peripheral|none)
+    classify_subtopic_map = {}     # url -> str
+    classify_reason_map = {}       # url -> str
+    for item in classify_results:
+        if isinstance(item, dict) and item.get("url"):
+            classify_relevance_map[item["url"]] = str(item.get("ai_relevance", "none")).strip().lower()
+            classify_subtopic_map[item["url"]] = str(item.get("ai_subtopic", "other")).strip().lower()
+            classify_reason_map[item["url"]] = str(item.get("reason", "")).strip()
 
     scored: List[ScoredMaterial] = []
     high = 0
     non_ai_count = 0
     for m in state.deduplicated_materials:
-        is_ai_topic = topic_relevant_map.get(m.url, True)
-        s = _final_score(score_map.get(m.url, 0.0), m, topic_relevant=is_ai_topic)
+        # 严闸门：heat_scorer 必须判 AI AND ai_classify 不能是 none
+        # 缺数据默认值：heat_scorer 漏 url → False；ai_classify 漏 url → "none"
+        heat_ai = heat_topic_map.get(m.url, False)
+        classify_ai = classify_relevance_map.get(m.url, "none")
+        is_ai = heat_ai and classify_ai != "none"
+
+        s = _final_score(score_map.get(m.url, 0.0), m, topic_relevant=is_ai)
         if s >= 60:
             high += 1
-        if not is_ai_topic:
+        if not is_ai:
             non_ai_count += 1
-        reason_text = reason_map.get(m.url, "") or ""
-        if not is_ai_topic:
-            reason_text = (reason_text or "LLM 判定非 AI 主题").strip()
+
+        reason_text = heat_reason_map.get(m.url, "") or ""
+        if not is_ai:
+            reason_text = (reason_text or "双路并行严闸门判定非 AI 主题").strip()
+        else:
+            # 拼接 ai_classify 的简短理由，方便回溯
+            classify_reason = classify_reason_map.get(m.url, "")
+            if classify_reason:
+                reason_text = f"{reason_text} | classify={classify_ai}/{classify_subtopic_map.get(m.url, 'other')}: {classify_reason}".strip(" |")
+
+        extra = dict(m.extra_data or {})
+        extra["ai_relevance"] = classify_ai
+        extra["ai_subtopic"] = classify_subtopic_map.get(m.url, "other")
+
         scored.append(
             ScoredMaterial(
                 url=m.url,
@@ -232,13 +344,22 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
                 source=m.source,
                 publish_time=m.publish_time,
                 category=m.category,
-                extra_data=m.extra_data,
+                extra_data=extra,
                 heat_score=s,
                 score_reason=reason_text,
             )
         )
 
-    logger.info(
-        f"打分完成: {len(scored)} 条, 高分 {high} 条, 非AI主题DROP {non_ai_count} 条"
+    classify_log = (
+        f"ai_classify 命中 {len([v for v in classify_relevance_map.values() if v != 'none'])} 条"
+        if classify_call_ok
+        else f"ai_classify 调用失败（err={classify_call_err}）"
     )
-    return HeatScorerOutput(scored_materials=scored, high_score_count=high, total_after_score=len(scored))
+    logger.info(
+        f"打分完成: {len(scored)} 条, 高分 {high} 条, 非AI主题DROP {non_ai_count} 条, {classify_log}"
+    )
+    return HeatScorerOutput(
+        scored_materials=scored,
+        high_score_count=high,
+        total_after_score=len(scored),
+    )

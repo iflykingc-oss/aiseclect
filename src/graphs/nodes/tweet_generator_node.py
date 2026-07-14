@@ -191,14 +191,19 @@ def _categorize_audience(mat: ScoredMaterial) -> str:
 
 
 def _balanced_pick(candidates: list, max_tweets: int) -> list:
-    """按受众桶配额挑 top N：general 保底、tech 封顶、不足从中性和其他桶补。"""
+    """按受众桶配额挑 top N：tech 保底、general 封顶、不足从中性和其他桶补。
+
+    改：账号定位是「AI 时代资讯 + 教程」，tech 桶（AI 模型/工具/开发者生态）
+    应占大头，general 桶（NewsNow 大众热点）只能少量出现（如 hackernews 上的
+    AI 争议事件、Product Hunt 上的 AI 工具发布）。
+    """
     if max_tweets <= 0:
         return []
     if len(candidates) <= max_tweets:
         return list(candidates)
 
-    general_quota = max(1, round(max_tweets * 0.6))   # 18 → 11 大众保底
-    tech_quota = max(1, round(max_tweets * 0.25))      # 18 → 4 技术封顶
+    tech_quota = max(1, round(max_tweets * 0.45))     # 18 → 8 tech 保底
+    general_quota = max(1, round(max_tweets * 0.35))  # 18 → 6 general 封顶
 
     general = [m for m in candidates if _categorize_audience(m) == "general"]
     tech = [m for m in candidates if _categorize_audience(m) == "tech"]
@@ -215,22 +220,22 @@ def _balanced_pick(candidates: list, max_tweets: int) -> list:
             used_urls.add(m.url)
             n -= 1
 
-    # 1) general 保底（不够就用 neutral 补，不再借 tech）
-    take(general, general_quota)
-    if sum(1 for x in selected if _categorize_audience(x) == "general") < general_quota:
-        take(neutral, general_quota - sum(1 for x in selected if _categorize_audience(x) == "general"))
-
-    # 2) tech 封顶
+    # 1) tech 保底（不够就用 neutral 补；AI 时代资讯账号 tech 必须占大头）
     take(tech, tech_quota)
+    if sum(1 for x in selected if _categorize_audience(x) == "tech") < tech_quota:
+        take(neutral, tech_quota - sum(1 for x in selected if _categorize_audience(x) == "tech"))
+
+    # 2) general 封顶（少量保留大众源里的 AI 工具发布/争议事件）
+    take(general, general_quota)
 
     # 3) neutral 补到 max_tweets（如果还不够，按 general → tech 顺序借）
     remaining = max_tweets - len(selected)
     if remaining > 0:
         take(neutral, remaining)
         if len(selected) < max_tweets:
-            take(general, max_tweets - len(selected))
+            take(tech, max_tweets - len(selected))
             if len(selected) < max_tweets:
-                take(tech, max_tweets - len(selected))
+                take(general, max_tweets - len(selected))
 
     # 4) 还没满就按原排序补
     if len(selected) < max_tweets:

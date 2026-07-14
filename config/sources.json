@@ -139,24 +139,11 @@
     }
   ],
   "newsnow_source_ids": [
-    "weibo",
-    "zhihu",
-    "bilibili",
-    "baidu",
-    "douyin",
-    "tieba",
-    "thepaper",
-    "ithome",
-    "sspai",
-    "producthunt",
     "hackernews",
     "v2ex",
     "solidot",
-    "cls",
-    "wallstreetcn",
-    "gelonghui",
-    "jin10",
-    "fastbull",
-    "coolapk"
+    "ithome",
+    "sspai",
+    "producthunt"
   ]
 }
