@@ -310,11 +310,13 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
     high = 0
     non_ai_count = 0
     for m in state.deduplicated_materials:
-        # 严闸门：heat_scorer 必须判 AI AND ai_classify 不能是 none
-        # 缺数据默认值：heat_scorer 漏 url → False；ai_classify 漏 url → "none"
-        heat_ai = heat_topic_map.get(m.url, False)
+        # 严闸门（v2）：ai_classify 命中即通过（专门的 AI 分类器，比 heat_scorer
+        # 兼任的 ai_topic_relevant 更可靠）。heat_scorer 的 ai_topic_relevant
+        # 仅作辅助信息写入 score_reason，不参与 DROP 决策。
+        # 缺数据默认值：ai_classify 漏 url → "none"（严闸门拒）
         classify_ai = classify_relevance_map.get(m.url, "none")
-        is_ai = heat_ai and classify_ai != "none"
+        heat_ai = heat_topic_map.get(m.url, False)
+        is_ai = classify_ai != "none"
 
         s = _final_score(score_map.get(m.url, 0.0), m, topic_relevant=is_ai)
         if s >= 60:
@@ -324,12 +326,15 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
 
         reason_text = heat_reason_map.get(m.url, "") or ""
         if not is_ai:
-            reason_text = (reason_text or "双路并行严闸门判定非 AI 主题").strip()
+            reason_text = (reason_text or "ai_classify 判定非 AI 主题").strip()
         else:
-            # 拼接 ai_classify 的简短理由，方便回溯
+            # 拼接 ai_classify 的简短理由 + heat_scorer 辅助标记，方便回溯
             classify_reason = classify_reason_map.get(m.url, "")
+            classify_info = f"classify={classify_ai}/{classify_subtopic_map.get(m.url, 'other')}"
             if classify_reason:
-                reason_text = f"{reason_text} | classify={classify_ai}/{classify_subtopic_map.get(m.url, 'other')}: {classify_reason}".strip(" |")
+                classify_info += f": {classify_reason}"
+            heat_info = f"heat_ai={'T' if heat_ai else 'F'}"
+            reason_text = f"{reason_text} | {classify_info} | {heat_info}".strip(" |")
 
         extra = dict(m.extra_data or {})
         extra["ai_relevance"] = classify_ai
