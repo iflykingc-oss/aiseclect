@@ -130,18 +130,6 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
 
     llm_cfg = LLMConfig.from_env(default_model="gpt-4o-mini").merged(cfg.get("config", {}))
 
-    # 读取 ai_classify LLM cfg（双路并行的第二路）
-    try:
-        classify_cfg = load_llm_cfg("config/ai_classify_llm_cfg.json", workspace_path=workspace)
-    except FileNotFoundError:
-        logger.warning("ai_classify cfg 找不到，ai_relevance 将全部默认为 'none'")
-        classify_cfg = None
-    classify_llm_cfg = (
-        LLMConfig.from_env(default_model="gpt-4o-mini").merged(classify_cfg.get("config", {}))
-        if classify_cfg
-        else None
-    )
-
     materials_data = [
         {
             "url": m.url,
@@ -158,11 +146,6 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
     materials_json = json.dumps(materials_data, ensure_ascii=False, indent=2)
 
     user_prompt = Template(cfg.get("up", "")).render(materials_json=materials_json)
-    classify_user_prompt = (
-        Template(classify_cfg.get("up", "")).render(materials_json=materials_json)
-        if classify_cfg
-        else None
-    )
 
     def _rule_score(m: StandardMaterial) -> float:
         text = " ".join([m.title or "", m.snippet or "", m.content or "", m.source or "", m.category or ""]).lower()
@@ -249,26 +232,6 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
         heat_call_err = e
         logger.error(f"热度打分 LLM 调用失败，按规则分降级: {e}")
 
-    # 路 2：ai_classify（专门判 AI 相关性）
-    classify_results: list = []
-    classify_call_ok = False
-    classify_call_err = None
-    if classify_cfg and classify_llm_cfg:
-        try:
-            from langchain_core.messages import SystemMessage, HumanMessage
-            classify_model = build_chat_model(classify_llm_cfg)
-            classify_messages = [
-                SystemMessage(content=classify_cfg.get("sp", "")),
-                HumanMessage(content=classify_user_prompt),
-            ]
-            classify_resp = invoke_with_retry(classify_model, classify_messages)
-            classify_text = extract_text(classify_resp.content)
-            classify_results = extract_json_array(classify_text)
-            classify_call_ok = True
-        except Exception as e:
-            classify_call_err = e
-            logger.error(f"ai_classify LLM 调用失败，ai_relevance 全部按 'none' 处理: {e}")
-
     # ===== 路径 1：LLM 完全失败 → fallback_score =====
     if not heat_call_ok:
         scored = [
@@ -292,36 +255,29 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
             total_after_score=len(scored),
         )
 
-    # ===== 路径 2：heat_scorer 成功 → 用双路并行严闸门 =====
+    # ===== 路径 2：LLM 成功 → 解析 5 字段（合并 ai_classify）=====
     score_map = {}
     heat_topic_map = {}     # url -> bool (ai_topic_relevant)
     heat_reason_map = {}    # url -> str (score_reason)
+    classify_relevance_map = {}   # url -> str (core|adjacent|peripheral|none)
+    classify_subtopic_map = {}     # url -> str
     for item in score_results:
         if isinstance(item, dict) and item.get("url"):
             try:
                 score_map[item["url"]] = float(item.get("heat_score", 0) or 0)
             except (TypeError, ValueError):
                 pass
-            heat_topic_map[item["url"]] = bool(item.get("ai_topic_relevant", True))
+            heat_topic_map[item["url"]] = bool(item.get("ai_topic_relevant", False))
             heat_reason_map[item["url"]] = str(item.get("score_reason", ""))
-
-    classify_relevance_map = {}   # url -> str (core|adjacent|peripheral|none)
-    classify_subtopic_map = {}     # url -> str
-    classify_reason_map = {}       # url -> str
-    for item in classify_results:
-        if isinstance(item, dict) and item.get("url"):
             classify_relevance_map[item["url"]] = str(item.get("ai_relevance", "none")).strip().lower()
             classify_subtopic_map[item["url"]] = str(item.get("ai_subtopic", "other")).strip().lower()
-            classify_reason_map[item["url"]] = str(item.get("reason", "")).strip()
 
     scored: List[ScoredMaterial] = []
     high = 0
     non_ai_count = 0
     for m in state.deduplicated_materials:
-        # 严闸门（v2）：ai_classify 命中即通过（专门的 AI 分类器，比 heat_scorer
-        # 兼任的 ai_topic_relevant 更可靠）。heat_scorer 的 ai_topic_relevant
-        # 仅作辅助信息写入 score_reason，不参与 DROP 决策。
-        # 缺数据默认值：ai_classify 漏 url → "none"（严闸门拒）
+        # 严闸门：ai_relevance != "none" 即通过（ai_topic_relevant 仅作辅助信息）。
+        # 缺数据默认值：ai_relevance 漏 url → "none"（严闸门拒）。
         classify_ai = classify_relevance_map.get(m.url, "none")
         heat_ai = heat_topic_map.get(m.url, False)
         is_ai = classify_ai != "none"
@@ -334,15 +290,10 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
 
         reason_text = heat_reason_map.get(m.url, "") or ""
         if not is_ai:
-            reason_text = (reason_text or "ai_classify 判定非 AI 主题").strip()
+            reason_text = (reason_text or "ai_relevance 判定非 AI 主题").strip()
         else:
-            # 拼接 ai_classify 的简短理由 + heat_scorer 辅助标记，方便回溯
-            classify_reason = classify_reason_map.get(m.url, "")
-            classify_info = f"classify={classify_ai}/{classify_subtopic_map.get(m.url, 'other')}"
-            if classify_reason:
-                classify_info += f": {classify_reason}"
             heat_info = f"heat_ai={'T' if heat_ai else 'F'}"
-            reason_text = f"{reason_text} | {classify_info} | {heat_info}".strip(" |")
+            reason_text = f"{reason_text} | relevance={classify_ai}/{classify_subtopic_map.get(m.url, 'other')} | {heat_info}".strip(" |")
 
         extra = dict(m.extra_data or {})
         extra["ai_relevance"] = classify_ai
@@ -363,13 +314,8 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
             )
         )
 
-    classify_log = (
-        f"ai_classify 命中 {len([v for v in classify_relevance_map.values() if v != 'none'])} 条"
-        if classify_call_ok
-        else f"ai_classify 调用失败（err={classify_call_err}）"
-    )
     logger.info(
-        f"打分完成: {len(scored)} 条, 高分 {high} 条, 非AI主题DROP {non_ai_count} 条, {classify_log}"
+        f"打分完成: {len(scored)} 条, 高分 {high} 条, 非AI主题DROP {non_ai_count} 条"
     )
     return HeatScorerOutput(
         scored_materials=scored,
