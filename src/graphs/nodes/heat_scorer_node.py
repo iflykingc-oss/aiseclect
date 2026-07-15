@@ -172,6 +172,14 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
         # 实用向 watchlist：prompt/教程/生图咒语/AI 办公/平替
         if "practical" in (m.source or "") or "tips" in (m.source or ""):
             score = max(score, 62.0)
+        # 纯 AI 来源（aihot / ainews / github / radar-daily-brief 等）兜底分：
+        # 即使 LLM 没给 heat_score，这些来源本身就 AI 强相关，给个中位分保底
+        ai_source_bases = (
+            "aihot", "ainews", "aihot-hot", "radar-daily", "radar-",
+            "ai-models", "ai-products", "official_ai",
+        )
+        if any((m.source or "").startswith(s) for s in ai_source_bases) or "github" in (m.source or ""):
+            score = max(score, 55.0)
         if any(k in text for k in ("漏洞", "cve", "泄露", "下架", "breaking change")):
             score += 8.0
         # NewsNow 中文大众向 source 加 base 分（保持热榜素材有底分；偏置由 AUDIENCE_BIAS 拉回）
