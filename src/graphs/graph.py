@@ -60,6 +60,7 @@ from graphs.nodes.event_cluster_node import event_cluster_node
 from graphs.nodes.content_enricher_node import content_enricher_node
 from graphs.nodes.content_cleaner_node import content_cleaner_node
 from graphs.nodes.tweet_generator_node import tweet_generator_node
+from graphs.nodes.xiaohongshu_generator_node import xiaohongshu_generator_node
 from graphs.nodes.feishu_writer_node import feishu_writer_node
 
 
@@ -126,6 +127,7 @@ builder.add_node("event_cluster", _wrap("event_cluster", event_cluster_node))
 builder.add_node("content_enricher", _wrap("content_enricher", content_enricher_node))
 builder.add_node("content_cleaner", _wrap("content_cleaner", content_cleaner_node))
 builder.add_node("tweet_generator", _wrap("tweet_generator", tweet_generator_node))
+builder.add_node("xiaohongshu_generator", _wrap("tweet_generator", xiaohongshu_generator_node))
 builder.add_node("feishu_writer", _wrap("feishu_writer", feishu_writer_node))
 
 # 边
@@ -149,8 +151,29 @@ builder.add_edge("dedup_filter", "heat_scorer")
 builder.add_edge("heat_scorer", "event_cluster")
 builder.add_edge("event_cluster", "content_enricher")
 builder.add_edge("content_enricher", "content_cleaner")
-builder.add_edge("content_cleaner", "tweet_generator")
+
+
+def route_to_generator(state: GlobalState) -> str:
+    """平台分流路由：根据 target_platform 选择生成器"""
+    platform = state.target_platform.lower()
+    if platform == "xiaohongshu":
+        return "xiaohongshu_generator"
+    else:
+        # mixed 和 x 都走原生成器（它已支持混合输出）
+        return "tweet_generator"
+
+
+builder.add_conditional_edges(
+    "content_cleaner",
+    route_to_generator,
+    {
+        "tweet_generator": "tweet_generator",
+        "xiaohongshu_generator": "xiaohongshu_generator",
+    }
+)
+
 builder.add_edge("tweet_generator", "feishu_writer")
+builder.add_edge("xiaohongshu_generator", "feishu_writer")
 builder.add_edge("feishu_writer", END)
 
 main_graph = builder.compile()

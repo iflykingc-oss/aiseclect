@@ -67,6 +67,7 @@ class GlobalState(BaseModel):
     max_tweets: int = 30
     clear_dedup: bool = False
     write_to_feishu: bool = True
+    target_platform: str = "mixed"
 
     # 落盘
     output_path: str = ""
@@ -92,6 +93,9 @@ class GraphInput(BaseModel):
     clear_dedup: bool = Field(default=False, description="是否清空历史去重状态")
     write_to_feishu: bool = Field(default=True, description="是否把推文写入飞书表格")
     write_to_local: bool = Field(default=True, description="是否本地落盘 output/tweets_*.json")
+
+    # 平台选择
+    target_platform: str = Field(default="mixed", description="内容生成目标平台: mixed(默认混合) | xiaohongshu(纯小红书) | x(纯X)")
 
 
 class GraphOutput(BaseModel):

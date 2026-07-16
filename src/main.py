@@ -63,6 +63,7 @@ def _build_input(args: argparse.Namespace) -> GraphInput:
         "clear_dedup": args.clear_dedup,
         "write_to_feishu": args.write_to_feishu,
         "write_to_local": args.write_to_local,
+        "target_platform": args.target_platform,
     }
     return GraphInput(**payload)
 
@@ -194,6 +195,9 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--feishu-page-id", default=os.getenv("FEISHU_PAGE_ID", ""))
     p.add_argument("--feishu-domain", default=os.getenv("FEISHU_DOMAIN", "my.feishu.cn"))
     p.add_argument("--no-wiki", action="store_true", help="非 Wiki 内嵌模式（独立表格）")
+    p.add_argument("--target-platform", default=os.getenv("AISECLECT_TARGET_PLATFORM", "mixed"),
+                   choices=["mixed", "xiaohongshu", "x"],
+                   help="目标平台: mixed(默认混合X+小红书) | xiaohongshu(纯小红书) | x(纯X)")
     return p.parse_args()
 
 
