@@ -154,12 +154,44 @@ builder.add_edge("content_enricher", "content_cleaner")
 
 
 def route_to_generator(state: GlobalState) -> str:
-    """平台分流路由：根据 target_platform 选择生成器"""
+    """平台分流路由：自动或手动选择生成器
+
+    手动模式：
+    - xiaohongshu → 强制小红书专用生成器
+    - x → 强制 X 生成器
+
+    自动模式（mixed）：
+    - 小红书友好素材（tech_depth <= 60）占比 > 50% → 小红书生成器
+    - 否则 → 混合生成器
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
     platform = state.target_platform.lower()
+
+    # 手动指定模式
     if platform == "xiaohongshu":
+        logger.info("手动模式：使用小红书专用生成器")
+        return "xiaohongshu_generator"
+    elif platform == "x":
+        logger.info("手动模式：使用 X 生成器")
+        return "tweet_generator"
+
+    # 自动模式（mixed）
+    cleaned = state.cleaned_materials or []
+    if not cleaned:
+        logger.info("无素材，默认使用混合生成器")
+        return "tweet_generator"
+
+    # 统计小红书友好素材（tech_depth <= 60）
+    xhs_friendly = sum(1 for m in cleaned if getattr(m, 'tech_depth', 70) <= 60)
+    xhs_ratio = xhs_friendly / len(cleaned)
+
+    if xhs_ratio > 0.5:
+        logger.info(f"自动模式：小红书友好素材 {xhs_ratio:.1%} > 50%，切换到小红书专用生成器")
         return "xiaohongshu_generator"
     else:
-        # mixed 和 x 都走原生成器（它已支持混合输出）
+        logger.info(f"自动模式：小红书友好素材 {xhs_ratio:.1%} ≤ 50%，使用混合生成器")
         return "tweet_generator"
 
 
