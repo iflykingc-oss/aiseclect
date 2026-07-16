@@ -16,7 +16,7 @@ from graphs.state import ContentCleanerInput, ContentCleanerOutput, ScoredMateri
 
 logger = logging.getLogger(__name__)
 
-MAX_CONTENT_CHARS = 800  # 清洗后单条素材上限
+MAX_CONTENT_CHARS = 1200  # 清洗后单条素材上限（从 800 提升到 1200，保留更多上下文）
 SNIPPET_MAX = 300
 TITLE_MAX = 200
 
@@ -113,21 +113,36 @@ def _normalize_whitespace(text: str) -> str:
 
 
 def clean_text(text: str, max_chars: int = MAX_CONTENT_CHARS) -> str:
-    """一站式清洗：去 HTML → 去 boilerplate → 合并空白 → 截断。"""
+    """一站式清洗：去 HTML → 去 boilerplate → 合并空白 → 智能截断。"""
     if not text:
         return ""
     text = _strip_html(text)
     text = _strip_boilerplate(text)
     text = _normalize_whitespace(text)
     if len(text) > max_chars:
-        text = text[:max_chars].rsplit("\n", 1)[0]  # 在最后一个换行处截断，避免断句
+        # 智能截断：优先在段落边界（双换行），其次在句子边界
+        truncated = text[:max_chars]
+        # 尝试在段落边界截断
+        para_split = truncated.rsplit("\n\n", 1)
+        if len(para_split) == 2 and len(para_split[0]) > max_chars * 0.7:
+            text = para_split[0]
+        else:
+            # 尝试在句子边界截断
+            sentence_split = truncated.rsplit("\n", 1)
+            if len(sentence_split) == 2 and len(sentence_split[0]) > max_chars * 0.7:
+                text = sentence_split[0]
+            else:
+                text = truncated
     return text
 
 
-def _pick_content(mat: ScoredMaterial) -> str:
-    """从素材挑正文：优先 content，其次 snippet。"""
+def _pick_content(mat: ScoredMaterial) -> tuple[str, bool]:
+    """从素材挑正文：优先 content，其次 snippet。返回 (内容, 是否被截断)。"""
     raw = mat.content if mat.content else (mat.snippet or "")
-    return clean_text(raw, MAX_CONTENT_CHARS)
+    original_len = len(raw)
+    cleaned = clean_text(raw, MAX_CONTENT_CHARS)
+    truncated = len(cleaned) < original_len and original_len > MAX_CONTENT_CHARS
+    return cleaned, truncated
 
 
 def _clean_snippet(snippet: str) -> str:
@@ -148,9 +163,19 @@ def content_cleaner_node(state: ContentCleanerInput) -> ContentCleanerOutput:
     cleaned: List[ScoredMaterial] = []
     total_before = sum(len(m.content or "") for m in state.scored_materials)
     total_after = 0
+    truncated_count = 0
+
     for mat in state.scored_materials:
-        c = _pick_content(mat)
+        c, was_truncated = _pick_content(mat)
         total_after += len(c)
+        if was_truncated:
+            truncated_count += 1
+
+        # 添加截断标记到 extra_data
+        extra = dict(mat.extra_data or {})
+        if was_truncated:
+            extra["truncated"] = True
+
         cleaned.append(
             ScoredMaterial(
                 url=mat.url,
@@ -164,10 +189,12 @@ def content_cleaner_node(state: ContentCleanerInput) -> ContentCleanerOutput:
                 score_reason=mat.score_reason,
                 related_urls=mat.related_urls,
                 cluster_size=mat.cluster_size,
+                extra_data=extra,
             )
         )
+
     reduction = (1 - total_after / total_before) * 100 if total_before else 0
     logger.info(
-        f"清洗: {len(cleaned)} 条, 字符 {total_before} → {total_after} (↓{reduction:.0f}%)"
+        f"清洗: {len(cleaned)} 条, 字符 {total_before} → {total_after} (↓{reduction:.0f}%), 截断 {truncated_count} 条"
     )
     return ContentCleanerOutput(cleaned_materials=cleaned)

@@ -35,16 +35,23 @@ def dedup_filter_node(state: DedupFilterInput) -> DedupFilterOutput:
     deduplicated: List[StandardMaterial] = []
     duplicates = 0
 
+    new_urls = []
     for mat in state.merged_materials:
         key = _normalize_url(mat.url)
         if key in seen:
             duplicates += 1
             continue
         seen.add(key)
+        new_urls.append(key)
         deduplicated.append(mat)
 
-    # 注意：这里只做过滤，不持久化新增 URL。
-    # URL 只有在成功写入飞书或确认飞书已存在后，才由 feishu_writer 持久化。
+    # 立即持久化新增 URL，不等待飞书写入成功
+    # 修复：Feishu API 失败时不丢失去重状态
+    if new_urls:
+        state_obj.add(new_urls)
+        state_obj.save()
+        logger.info(f"去重: 持久化 {len(new_urls)} 个新 URL")
+
     logger.info(f"去重: 原始 {len(state.merged_materials)} / 新增 {len(deduplicated)} / 重复 {duplicates}")
     return DedupFilterOutput(
         deduplicated_materials=deduplicated,

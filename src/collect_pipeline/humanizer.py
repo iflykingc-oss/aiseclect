@@ -32,6 +32,8 @@ AI_CLICHES = (
     "我们拭目以待", "未来可期", "不容错过", "值得深思", "值得收藏", "值得关注",
     "重要更新", "最新消息", "一文看懂", "简单说", "快速了解", "赋能", "闭环",
     "打法", "矩阵", "心智", "调性", "底层逻辑", "维度", "拐点",
+    "震惊", "绝了", "宝子们", "家人们", "姐妹们", "冲冲冲", "必看", "神器",
+    "颠覆", "重磅", "史诗级", "天花板", "yyds", "绝绝子", "太绝了",
 )
 
 HEDGE_WORDS = (
@@ -74,6 +76,21 @@ _REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"底层逻辑", "关键原因"),
         (r"维度", "角度"),
         (r"拐点", "变化点"),
+        (r"震惊[！!]?", ""),
+        (r"绝了[！!]?", "不错"),
+        (r"宝子们?", "朋友"),
+        (r"家人们?", "大家"),
+        (r"姐妹们?", "朋友"),
+        (r"冲冲冲[！!]*", "可以试试"),
+        (r"必看[！!]?", "推荐看"),
+        (r"神器[！!]?", "好工具"),
+        (r"颠覆性?", "变化大"),
+        (r"重磅[！!]?", "重要"),
+        (r"史诗级", "很重要"),
+        (r"天花板", "很强"),
+        (r"yyds", "很好"),
+        (r"绝绝子", "很不错"),
+        (r"太绝了", "很好"),
     )
 )
 
@@ -183,13 +200,37 @@ def humanize_draft(
     *,
     fields: tuple[str, ...] = ("tweet_content", "other_title", "other_content"),
     level: str = "soft",
+    platform: str = "general",
+    enable_rhythm: bool = True,
 ) -> tuple[dict, ToneReport]:
-    """对 LLM 草稿字段做统一去 AI 味处理。"""
+    """对 LLM 草稿字段做统一去 AI 味处理。
+
+    Args:
+        data: 包含文本字段的字典
+        fields: 需要处理的字段名
+        level: 人性化级别 ("off" | "soft")
+        platform: 目标平台 ("xiaohongshu" | "weibo" | "general")
+        enable_rhythm: 是否启用节奏变化（多层人性化第一层）
+    """
     updated = dict(data or {})
+
+    # 导入节奏人性化模块
+    if enable_rhythm:
+        try:
+            from collect_pipeline.rhythm_humanizer import humanize_rhythm
+        except ImportError:
+            enable_rhythm = False
+
     for field in fields:
         value = updated.get(field)
         if isinstance(value, str) and value.strip():
+            # 第一层：套话替换 + 标点规整
             updated[field], _ = humanize_text(value, level=level)
+
+            # 第二层：节奏变化 + 平台语气（仅对正文生效）
+            if enable_rhythm and field in ("tweet_content", "other_content"):
+                target_platform = platform if field == "other_content" else "general"
+                updated[field], _ = humanize_rhythm(updated[field], target_platform)
 
     combined = "\n".join(str(updated.get(field) or "") for field in fields)
     return updated, detect_ai_tone(combined)

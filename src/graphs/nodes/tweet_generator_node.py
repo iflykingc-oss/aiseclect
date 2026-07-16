@@ -31,6 +31,7 @@ from collect_pipeline.growth_taxonomy import (
     summarize_growth_scores,
 )
 from collect_pipeline.humanizer import humanize_draft
+from graphs.nodes.length_validator import post_generation_check
 from graphs.state import (
     ScoredMaterial,
     TweetDraft,
@@ -48,7 +49,7 @@ from tools.llm import (
 
 logger = logging.getLogger(__name__)
 
-BATCH_SIZE = 5  # 单次 LLM 调用素材上限
+BATCH_SIZE = 8  # 单次 LLM 调用素材上限（从 5 提升到 8 以减少调用次数）
 PLATFORM_ONLY_X = "仅X"
 PLATFORM_GENERAL = "X+小红书"
 DEFAULT_STRATEGY: Dict[str, Any] = {
@@ -808,12 +809,30 @@ def _downgrade_to_only_x(data: dict) -> dict:
 def _build_draft(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) -> Tuple[TweetDraft | None, str]:
     """从 LLM 生成的 dict 构造 TweetDraft。返回 (draft, reject_reason)。"""
     data = _normalize_generated_payload(data)
+
+    # 字数预检与自动截断（P1 优化）
+    length_fixes = []
+    try:
+        data, length_fixes = post_generation_check(data, strict=True)
+        if length_fixes:
+            logger.info(f"字数自动修复: {' | '.join(length_fixes)}")
+    except Exception as e:
+        logger.warning(f"字数检查失败: {e}")
+
     tone_note = ""
     try:
-        data, tone_report = humanize_draft(data)
+        # 判断平台类型，传递给 humanizer
+        target_platform = "xiaohongshu" if data.get("platform") == PLATFORM_GENERAL else "general"
+        data, tone_report = humanize_draft(
+            data,
+            platform=target_platform,
+            enable_rhythm=True
+        )
         tone_note = f"ai_tone={tone_report.ai_score:.0f}"
         if tone_report.ai_cliche_hits:
             tone_note += "; hits=" + ",".join(tone_report.ai_cliche_hits[:3])
+        if length_fixes:
+            tone_note += f"; length_fixed={len(length_fixes)}"
     except Exception as e:
         logger.warning(f"humanizer 处理失败，保留原文: {e}")
     if _force_only_x(mat):

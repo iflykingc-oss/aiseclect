@@ -2,11 +2,11 @@
 AI 热度打分节点 - LLM（OpenAI 兼容）评分；支持降级
 
 设计要点：
-- 双路并行严闸门：heat_scorer LLM 输出 ai_topic_relevant；
-                   ai_classify LLM 专门输出 ai_relevance (core/adjacent/peripheral|none)。
-                   必须两者都判 AI 才算通过（normal path）。
-- 缺数据默认值改为 False / "none"，避免 LLM 漏标时被默认放行。
-- fallback 路径（LLM 完全失败）保留 AI 关键词软提示，覆盖主流 AI 公司/产品名。
+- 单 LLM 调用返回 5 个字段：heat_score, score_reason, ai_topic_relevant, ai_relevance, ai_subtopic
+- AI 主题闸门：仅检查 ai_relevance 字段（core/adjacent/peripheral 通过，none 拒绝）
+- ai_topic_relevant 字段仅作辅助信息记录，不影响闸门判定
+- 缺数据默认值改为 False / "none"，避免 LLM 漏标时被默认放行
+- fallback 路径（LLM 完全失败）保留 AI 关键词软提示，覆盖主流 AI 公司/产品名
 """
 from __future__ import annotations
 
@@ -194,11 +194,12 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
         return min(score, 85.0) if score else 0.0
 
     def _final_score(llm_score: float, m: StandardMaterial, topic_relevant: bool = False) -> float:
-        # AI 主题闸门（双路并行严闸门结果）
+        # AI 主题闸门（仅检查 ai_relevance，ai_topic_relevant 作辅助信息）
         if not topic_relevant:
             return 0.0
         base = max(llm_score, _rule_score(m))
-        return max(0.0, min(100.0, base + _audience_bias(m.category, m.source))) if base else 0.0
+        # 修复：无条件应用受众偏置，允许 tech 源从 0 分提升到 6 分
+        return max(0.0, min(100.0, base + _audience_bias(m.category, m.source)))
 
     def _fallback_score(m: StandardMaterial) -> float:
         """LLM 完全失败时按规则分保底。AI 关键词软提示覆盖主流 AI 公司/产品名。"""
@@ -272,6 +273,12 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
             classify_relevance_map[item["url"]] = str(item.get("ai_relevance", "none")).strip().lower()
             classify_subtopic_map[item["url"]] = str(item.get("ai_subtopic", "other")).strip().lower()
 
+    # 检测 LLM 遗漏的 URL（输入有但响应缺失）
+    input_urls = {m.url for m in state.deduplicated_materials}
+    missing_urls = input_urls - set(score_map.keys())
+    if missing_urls:
+        logger.warning(f"LLM 遗漏 {len(missing_urls)} 个 URL（将默认拒绝）: {list(missing_urls)[:5]}")
+
     scored: List[ScoredMaterial] = []
     high = 0
     non_ai_count = 0
@@ -312,6 +319,18 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
                 heat_score=s,
                 score_reason=reason_text,
             )
+        )
+
+    # ===== 质量闸门统计（不改变输出，仅记录） =====
+    from graphs.nodes.quality_gate import batch_quality_gate
+
+    gate_materials = [(m.heat_score, m.url, m.title, m.source) for m in scored if m.heat_score > 0]
+    if gate_materials:
+        gate_result = batch_quality_gate(gate_materials)
+        logger.info(
+            f"质量闸门预览: 自动通过 {gate_result['stats']['approve']} | "
+            f"待审核 {gate_result['stats']['review']} | "
+            f"拒绝 {gate_result['stats']['reject']}"
         )
 
     logger.info(

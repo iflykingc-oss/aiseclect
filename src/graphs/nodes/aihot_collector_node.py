@@ -25,29 +25,34 @@ CATEGORY_ZH = {
 
 def aihot_collector_node(state: AIHotCollectorInput) -> AIHotCollectorOutput:
     logger.info("AIHOT 雷达采集开始（卡兹克 ai-news-radar 同源精编）")
-    client = AIHotClient()
-    resp = client.list_items(mode="selected", take=max(20, state.max_per_source))
     materials: List[RawMaterial] = []
-    for item in resp.items[: state.max_per_source]:
-        if not item.url:
-            continue
-        materials.append(
-            RawMaterial(
-                url=item.permalink or item.url,  # 站内 permalink 优先（中文翻译 + 无墙）
-                title=item.title,
-                snippet=item.summary or "",
-                content=item.summary or "",
-                source="aihot",
-                publish_time=item.published_at,
-                extra_data={
-                    "original_url": item.url,
-                    "source_name": item.source,
-                    "category": item.category,
-                    "category_zh": CATEGORY_ZH.get(item.category or "", "未分类"),
-                    "score": item.score,
-                    "selected": item.selected,
-                },
+
+    try:
+        client = AIHotClient()
+        resp = client.list_items(mode="selected", take=max(20, state.max_per_source))
+        for item in resp.items[: state.max_per_source]:
+            if not item.url:
+                continue
+            materials.append(
+                RawMaterial(
+                    url=item.permalink or item.url,  # 站内 permalink 优先（中文翻译 + 无墙）
+                    title=item.title,
+                    snippet=item.summary or "",
+                    content=item.summary or "",
+                    source="aihot",
+                    publish_time=item.published_at,
+                    extra_data={
+                        "original_url": item.url,
+                        "source_name": item.source,
+                        "category": item.category,
+                        "category_zh": CATEGORY_ZH.get(item.category or "", "未分类"),
+                        "score": item.score,
+                        "selected": item.selected,
+                    },
+                )
             )
-        )
-    logger.info(f"AIHOT 雷达: {len(materials)} 条（精选池共 {resp.count}）")
+        logger.info(f"AIHOT 雷达: {len(materials)} 条（精选池共 {resp.count}）")
+    except Exception as e:
+        logger.warning(f"AIHOT 采集失败: {e}")
+
     return AIHotCollectorOutput(aihot_materials=materials)

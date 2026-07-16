@@ -71,6 +71,24 @@ CATEGORY_ZH_MAP: Dict[str, str] = {
     "coolapk": "数码社区",
 }
 
+# 大众热搜源（需要 AI 关键词过滤）
+GENERAL_HOT_SOURCES = {"weibo", "zhihu", "bilibili", "baidu", "douyin", "tieba", "coolapk"}
+
+# 技术/AI 源（保留全部内容）
+TECH_SOURCES = {"hackernews", "v2ex", "ithome", "sspai", "producthunt", "solidot"}
+
+# AI 关键词（从 heat_scorer_node 同步）
+AI_KEYWORDS = (
+    "ai", "a.i.", "llm", "gpt", "chatgpt", "claude", "gemini", "grok", "deepseek",
+    "豆包", "通义", "文心", "千问", "kimi", "智谱", "月之暗面",
+    "midjourney", "sora", "runway", "pika", "可灵", "即梦", "海螺",
+    "cursor", "windsurf", "copilot", "v0", "bolt",
+    "prompt", "咒语", "智能体", "agent", "大模型", "人工智能",
+    "apple intelligence", "galaxy ai", "小爱同学", "copilot+",
+    "notion ai", "office copilot", "adobe firefly", "wps ai", "飞书 ai",
+    "ai 助手", "ai 写作", "ai 拍照", "ai 翻译", "ai 搜索",
+)
+
 
 def _parse_source_ids() -> List[str]:
     """从环境变量读覆盖列表，否则用默认。"""
@@ -122,11 +140,24 @@ def _normalize_url(url: str) -> str:
     return urlunparse((u.scheme, u.netloc, u.path, u.params, "&".join(f"{k}={v}" for k, v in qs), ""))
 
 
+def _should_keep_item(source_id: str, title: str, snippet: str) -> bool:
+    """判断是否保留该条目（技术源全保留，大众源需匹配 AI 关键词）。"""
+    if source_id in TECH_SOURCES:
+        return True
+    if source_id not in GENERAL_HOT_SOURCES:
+        return True  # 其他源默认保留
+
+    # 大众热搜源：需要匹配 AI 关键词
+    text = (title + " " + snippet).lower()
+    return any(kw in text for kw in AI_KEYWORDS)
+
+
 def newsnow_collector_node(state: NewsNowCollectorInput) -> NewsNowCollectorOutput:
     source_ids = _parse_source_ids()
     per_id = max(2, state.max_per_source // 3)  # 19 source × 3 条 ≈ 57 条（之前 4 条导致下游过载）
     materials: List[RawMaterial] = []
     seen_urls: set = set()
+    filtered_count = 0
 
     logger.info(f"NewsNow 采集开始（{len(source_ids)} 个 source，每源最多 {per_id} 条）")
 
@@ -143,10 +174,17 @@ def newsnow_collector_node(state: NewsNowCollectorInput) -> NewsNowCollectorOutp
             url = _normalize_url(url)
             if url in seen_urls:
                 continue
-            seen_urls.add(url)
+
             # snippet 取自 extra.description 或 extra.summary，没有就空
             extra = it.get("extra") or {}
             snippet = (extra.get("description") or extra.get("summary") or extra.get("info") or "").strip()
+
+            # AI 关键词过滤
+            if not _should_keep_item(sid, title, snippet):
+                filtered_count += 1
+                continue
+
+            seen_urls.add(url)
             pub_ts = extra.get("pubDate") or extra.get("timestamp") or it.get("timestamp")
             publish_time = None
             if isinstance(pub_ts, (int, float)):
@@ -176,5 +214,5 @@ def newsnow_collector_node(state: NewsNowCollectorInput) -> NewsNowCollectorOutp
             logger.info(f"  NewsNow {sid}: 拉取 {len(items)} 条，保留 {kept} 条")
         time.sleep(INTER_REQUEST_SLEEP)
 
-    logger.info(f"NewsNow 采集: {len(materials)} 条（来自 {len(source_ids)} 个 source）")
+    logger.info(f"NewsNow 采集: {len(materials)} 条（过滤 {filtered_count} 条非 AI，来自 {len(source_ids)} 个 source）")
     return NewsNowCollectorOutput(newsnow_materials=materials)
