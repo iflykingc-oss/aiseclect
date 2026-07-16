@@ -63,7 +63,13 @@ def vary_sentence_rhythm(text: str, target_platform: str = "general") -> str:
 
         processed.append(segment)
 
-    return ''.join(processed)
+    result = ''.join(processed)
+
+    # 修复错误标点组合
+    result = re.sub(r'，+。+', '。', result)
+    result = re.sub(r'。+，+', '。', result)
+
+    return result
 
 
 def add_platform_voice(text: str, platform: str) -> str:

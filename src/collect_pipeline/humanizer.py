@@ -169,6 +169,11 @@ def _normalize_punctuation(text: str) -> str:
     text = re.sub(r"[?？]{2,}", "？", text)
     text = re.sub(r"[。]{2,}", "。", text)
     text = re.sub(r"[，,]{2,}", "，", text)
+
+    # 修复错误标点组合：，。 或 。，
+    text = re.sub(r"，+。+", "。", text)
+    text = re.sub(r"。+，+", "。", text)
+
     text = re.sub(r"[ \t]+([，。！？；：])", r"\1", text)
     text = re.sub(r"([，。！？；：])[ \t]+", r"\1", text)
     return text
