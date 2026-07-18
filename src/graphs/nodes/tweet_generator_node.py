@@ -807,6 +807,25 @@ def _downgrade_to_only_x(data: dict) -> dict:
     return downgraded
 
 
+# 段落占位符清洗：LLM 有时把段落之间的空行写成 "。\n\n" 这种孤立标点段
+_PLACEHOLDER_PARAGRAPH = re.compile(r"\n{2,}[。…·•\-\*＊═─═\s]+\n{2,}")
+_EXCESS_BLANKLINES = re.compile(r"\n{3,}")
+
+
+def _clean_tweet_text(s: str) -> str:
+    """清理推文/小红书正文里的段落占位符，并收敛连续空行。
+
+    LLM 生成时偶尔会把段落之间的空行渲染成孤立标点段（如 "\n\n。\n\n"），
+    这些字符在 X / 小红书展示时会留下孤零零的句号。折叠掉这些"伪空段"。
+    """
+    if not s:
+        return ""
+    cleaned = _PLACEHOLDER_PARAGRAPH.sub("\n\n", s)
+    cleaned = _EXCESS_BLANKLINES.sub("\n\n", cleaned)
+    return cleaned.strip()
+
+
+
 def _build_draft(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) -> Tuple[TweetDraft | None, str]:
     """从 LLM 生成的 dict 构造 TweetDraft。返回 (draft, reject_reason)。"""
     data = _normalize_generated_payload(data)
@@ -853,9 +872,9 @@ def _build_draft(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) -> T
         return None, reason
 
     platform = data["platform"]
-    tweet = (data.get("tweet_content") or "").strip()
+    tweet = _clean_tweet_text(data.get("tweet_content") or "")
     other_title = (data.get("other_title") or "").strip()
-    other_content = (data.get("other_content") or "").strip()
+    other_content = _clean_tweet_text(data.get("other_content") or "")
     other_tags = _normalize_tags(data.get("other_tags"))
     image_prompt = (data.get("image_prompt") or "").strip()
     xhs_quality_score = 0.0
