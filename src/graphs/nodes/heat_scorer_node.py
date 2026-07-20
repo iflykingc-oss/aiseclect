@@ -29,6 +29,15 @@ from tools.llm import (
 
 logger = logging.getLogger(__name__)
 
+# 单次 LLM 调用最多塞多少条素材。
+# 经验值：每条 JSON ≈ 200 chars，40 条 ≈ 8KB 输入 + LLM 输出 5 字段×40 ≈ 6KB JSON，
+# 总 token ~5K，主流 8K 上下文模型能完整返回。>50 极易截断 → 全部 URL 被默认拒。
+HEAT_BATCH_SIZE = 40
+
+
+def _chunked(items: list, size: int) -> list:
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
 
 # 受众桶打分偏置：tech 提分（AI/技术向），general 不再加分（避免 NewsNow 大众源挤占名额）
 AUDIENCE_BIAS = {
@@ -143,9 +152,6 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
         }
         for m in state.deduplicated_materials
     ]
-    materials_json = json.dumps(materials_data, ensure_ascii=False, indent=2)
-
-    user_prompt = Template(cfg.get("up", "")).render(materials_json=materials_json)
 
     def _rule_score(m: StandardMaterial) -> float:
         text = " ".join([m.title or "", m.snippet or "", m.content or "", m.source or "", m.category or ""]).lower()
@@ -218,16 +224,24 @@ def heat_scorer_node(state: HeatScorerInput) -> HeatScorerOutput:
 
     # ===== 双路并行 LLM 调用（顺序执行避免并发风险）=====
     # 路 1：heat_scorer（评分 + ai_topic_relevant）
+    # 分批：避免单次输入/输出超 token 上限导致 JSON 截断 → 全部 URL 被默认拒
     score_results: list = []
     heat_call_ok = False
     heat_call_err = None
     try:
         from langchain_core.messages import SystemMessage, HumanMessage
         model = build_chat_model(llm_cfg)
-        messages = [SystemMessage(content=cfg.get("sp", "")), HumanMessage(content=user_prompt)]
-        resp = invoke_with_retry(model, messages)
-        text = extract_text(resp.content)
-        score_results = extract_json_array(text)
+        batches = _chunked(materials_data, HEAT_BATCH_SIZE)
+        logger.info(f"heat_scorer 分批: {len(materials_data)} 条 → {len(batches)} 批 (size≤{HEAT_BATCH_SIZE})")
+        for i, batch in enumerate(batches, 1):
+            batch_json = json.dumps(batch, ensure_ascii=False, indent=2)
+            batch_prompt = Template(cfg.get("up", "")).render(materials_json=batch_json)
+            messages = [SystemMessage(content=cfg.get("sp", "")), HumanMessage(content=batch_prompt)]
+            resp = invoke_with_retry(model, messages)
+            text = extract_text(resp.content)
+            batch_results = extract_json_array(text)
+            score_results.extend(batch_results)
+            logger.info(f"  批次 {i}/{len(batches)}: 输入 {len(batch)} → 解析 {len(batch_results)} 条")
         heat_call_ok = True
     except Exception as e:
         heat_call_err = e

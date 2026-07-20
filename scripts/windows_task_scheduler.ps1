@@ -33,9 +33,10 @@ $Action = New-ScheduledTaskAction `
     -Argument "-u $ScriptPath --interval-hours $IntervalHours" `
     -WorkingDirectory $ProjectRoot
 
-# 触发器：开机后 1 分钟开始，之后每 N 小时循环
-$Trigger = New-ScheduledTaskTrigger -AtStartup
-$Trigger.Delay = "PT1M"
+# 触发器：开机后 1 分钟开始首跑，之后每 N 小时循环（无限期）
+$Trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+    -RepetitionInterval (New-TimeSpan -Hours $IntervalHours) `
+    -RepetitionDuration (New-TimeSpan -Days 3650)
 $Settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `

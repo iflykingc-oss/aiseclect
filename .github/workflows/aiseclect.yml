@@ -33,6 +33,20 @@ on:
         options:
           - 'false'
           - 'true'
+      max_tweets:
+        description: '本轮最多生成草稿数（默认 18，配额制）'
+        required: false
+        default: '18'
+        type: string
+      target_platform:
+        description: '生成平台: mixed(默认混合) | xiaohongshu(纯小红书) | x(纯X)'
+        required: false
+        default: 'mixed'
+        type: choice
+        options:
+          - 'mixed'
+          - 'xiaohongshu'
+          - 'x'
 
 # 防止并发跑（比如上一次还没结束）
 concurrency:
@@ -83,6 +97,8 @@ jobs:
           # 行为参数（手动触发时可覆盖）
           AISECLECT_MAX_PER_SOURCE: ${{ github.event.inputs.max_per_source || '12' }}
           AISECLECT_MIN_HEAT_SCORE: ${{ github.event.inputs.min_heat_score || '18' }}
+          AISECLECT_MAX_TWEETS: ${{ github.event.inputs.max_tweets || '18' }}
+          AISECLECT_TARGET_PLATFORM: ${{ github.event.inputs.target_platform || 'mixed' }}
           AISECLECT_CLEAR_DEDUP: ${{ github.event.inputs.clear_dedup || 'false' }}
           AISECLECT_CLEANUP_PENDING: ${{ github.event.inputs.cleanup_pending || 'false' }}
         run: |
@@ -91,7 +107,7 @@ jobs:
             echo "Cleaning Feishu pending records before run"
             .venv/bin/python scripts/cleanup_feishu_pending.py --confirm
           fi
-          ARGS="--max-per-source ${AISECLECT_MAX_PER_SOURCE} --min-heat-score ${AISECLECT_MIN_HEAT_SCORE}"
+          ARGS="--max-per-source ${AISECLECT_MAX_PER_SOURCE} --min-heat-score ${AISECLECT_MIN_HEAT_SCORE} --max-tweets ${AISECLECT_MAX_TWEETS} --target-platform ${AISECLECT_TARGET_PLATFORM}"
           if [ "${AISECLECT_CLEAR_DEDUP}" = "true" ]; then
             ARGS="${ARGS} --clear-dedup"
           fi
@@ -106,3 +122,19 @@ jobs:
           path: output/
           retention-days: 7
           if-no-files-found: ignore
+
+      # 失败告警：cron 静默失败最致命，推一条飞书 webhook 让人能感知
+      - name: Notify failure
+        if: failure()
+        env:
+          FEISHU_ALERT_WEBHOOK: ${{ secrets.FEISHU_ALERT_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "${FEISHU_ALERT_WEBHOOK:-}" ]; then
+            echo "FEISHU_ALERT_WEBHOOK not set, skip alert"
+            exit 0
+          fi
+          TITLE="🚨 aiseclect GitHub Action 失败"
+          TEXT="**run**: ${RUN_URL}\n**branch**: ${GITHUB_REF_NAME}\n**commit**: ${GITHUB_SHA::7}"
+          PAYLOAD=$(jq -n --arg t "$TITLE" --arg c "$TEXT" '{msg_type:"interactive", card:{header:{title:{tag:"plain_text",content:$t},template:"red"}, elements:[{tag:"markdown",content:$c}]}}')
+          curl -sS -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$FEISHU_ALERT_WEBHOOK" || echo "alert webhook failed (non-fatal)"

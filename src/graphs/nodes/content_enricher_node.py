@@ -25,7 +25,13 @@ from graphs.nodes.content_cleaner_node import _strip_html, _strip_boilerplate, _
 logger = logging.getLogger(__name__)
 
 MIN_CONTENT_FOR_LLM = 200
-MIN_EVIDENCE_CHARS = 120
+MIN_EVIDENCE_CHARS = 60
+
+# NewsNow 聚合源：摘要普遍只有 title+URL，没有正文。短摘要也保留进 LLM，
+# 让生成阶段自己提炼事实；不再因抓不到正文就整条 DROP。
+NEWSNOW_SOURCE_PREFIXES = (
+    "newsnow-",
+)
 FETCH_TIMEOUT = 6  # 单 URL 超时（秒）
 NODE_TOTAL_TIMEOUT = 30  # 节点整体超时（秒）
 MAX_WORKERS = 10  # 并发抓取数
@@ -78,6 +84,9 @@ def _has_enough_evidence(m: ScoredMaterial) -> bool:
     category = (m.category or "").lower()
     if len(evidence) < MIN_EVIDENCE_CHARS:
         return False
+    # NewsNow 聚合源：标题+短摘要在主流热榜已是高信号证据，保留进 LLM 自提
+    if any(source.startswith(p) for p in NEWSNOW_SOURCE_PREFIXES):
+        return True
     if any(k in source for k in ("watchlist", "github", "aihot-hot", "radar-daily")):
         return True
     if any(k in category for k in ("网络工具", "开源治理", "安全隐私")):

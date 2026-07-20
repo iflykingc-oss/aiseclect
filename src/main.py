@@ -176,6 +176,7 @@ async def _run(args: argparse.Namespace) -> GraphOutput:
             total_tweets=out.total_tweets,
             feishu_written=len(out.feishu_record_ids),
             feishu_url=out.feishu_table_url,
+            dropped=len(out.reject_events),
         )
 
     return out
