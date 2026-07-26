@@ -159,13 +159,21 @@ async def _run(args: argparse.Namespace) -> GraphOutput:
         path = write_tweets(out.tweet_drafts, rejects=out.reject_events)
         out.output_path = str(path)
 
-    # 关键告警点
+    # 关键告警点（2026-07-26 加详细日志方便排查 webhook）
+    logger.info(
+        f"[告警判定] collected={out.total_collected} "
+        f"deduped={out.total_after_dedup} tweets={out.total_tweets} "
+        f"feishu_written={len(out.feishu_record_ids)} "
+        f"tweet_drafts={len(out.tweet_drafts) if isinstance(out.tweet_drafts, list) else 0} "
+        f"webhook_enabled={notifier.enabled}"
+    )
     if out.total_collected == 0:
         notifier.zero_materials("采集")
     elif out.total_after_dedup == 0:
         notifier.zero_materials("去重后")
     elif args.write_to_feishu and not out.feishu_record_ids and out.tweet_drafts:
         # 本地有推文但飞书一条没写进去 → 告警
+        logger.warning(f"[告警触发] feishu_write_zero: drafted={len(out.tweet_drafts)}")
         notifier.feishu_write_zero(drafted=len(out.tweet_drafts))
 
     # 跑完汇总

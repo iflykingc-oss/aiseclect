@@ -29,9 +29,11 @@ class FeishuNotifier:
 
     def _post(self, payload: dict) -> bool:
         if not self.enabled:
-            logger.debug(f"FEISHU_ALERT_WEBHOOK 未配置，告警改 stdout: {payload.get('msg_type', '?')}")
+            logger.warning(f"FEISHU_ALERT_WEBHOOK 未配置，告警降级 stdout: {payload.get('msg_type', '?')}")
             print(f"[ALERT/fallback] {json.dumps(payload, ensure_ascii=False)}")
             return False
+        # 2026-07-26: 显式 log 调 webhook 的事件，方便 CI 排查
+        logger.info(f"调用 webhook 告警: {payload.get('msg_type', '?')} title={payload.get('card', {}).get('header', {}).get('title', {}).get('content', '?')}")
         try:
             resp = requests.post(
                 self.webhook,
@@ -39,6 +41,7 @@ class FeishuNotifier:
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 timeout=WEBHOOK_TIMEOUT,
             )
+            logger.info(f"webhook 响应: HTTP {resp.status_code}")
             if resp.status_code != 200:
                 logger.warning(f"飞书 Webhook HTTP {resp.status_code}: {resp.text[:200]}")
                 print(f"[ALERT/fallback] HTTP {resp.status_code}: {payload}")
