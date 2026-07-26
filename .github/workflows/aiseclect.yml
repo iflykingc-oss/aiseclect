@@ -47,6 +47,11 @@ on:
           - 'mixed'
           - 'xiaohongshu'
           - 'x'
+      freshness_hours:
+        description: '飞书表里 N 小时前已存在的 URL 视为可重新入（默认 168=7天）'
+        required: false
+        default: '168'
+        type: string
 
 # 防止并发跑（比如上一次还没结束）
 concurrency:
@@ -101,13 +106,14 @@ jobs:
           AISECLECT_TARGET_PLATFORM: ${{ github.event.inputs.target_platform || 'mixed' }}
           AISECLECT_CLEAR_DEDUP: ${{ github.event.inputs.clear_dedup || 'false' }}
           AISECLECT_CLEANUP_PENDING: ${{ github.event.inputs.cleanup_pending || 'false' }}
+          AISECLECT_FRESHNESS_HOURS: ${{ github.event.inputs.freshness_hours || '168' }}
         run: |
           set -euo pipefail
           if [ "${AISECLECT_CLEANUP_PENDING}" = "true" ]; then
             echo "Cleaning Feishu pending records before run"
             .venv/bin/python scripts/cleanup_feishu_pending.py --confirm
           fi
-          ARGS="--max-per-source ${AISECLECT_MAX_PER_SOURCE} --min-heat-score ${AISECLECT_MIN_HEAT_SCORE} --max-tweets ${AISECLECT_MAX_TWEETS} --target-platform ${AISECLECT_TARGET_PLATFORM}"
+          ARGS="--max-per-source ${AISECLECT_MAX_PER_SOURCE} --min-heat-score ${AISECLECT_MIN_HEAT_SCORE} --max-tweets ${AISECLECT_MAX_TWEETS} --target-platform ${AISECLECT_TARGET_PLATFORM} --freshness-hours ${AISECLECT_FRESHNESS_HOURS}"
           if [ "${AISECLECT_CLEAR_DEDUP}" = "true" ]; then
             ARGS="${ARGS} --clear-dedup"
           fi
