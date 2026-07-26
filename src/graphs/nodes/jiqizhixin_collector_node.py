@@ -1,13 +1,14 @@
-"""机器之心数据采集节点
+"""机器之心数据采集节点（第 10 路）
 
 采集来源: https://www.jiqizhixin.com/
 内容类型: AI 模型、研究、应用、产业新闻
 预期产出: 10-15 条/日高质量中文 AI 内容
+
+签名已迁移至 LangGraph 节点约定：(state: JiqizhixinCollectorInput) -> JiqizhixinCollectorOutput
 """
 from __future__ import annotations
 
 import logging
-import re
 from datetime import datetime
 from typing import List
 
@@ -15,7 +16,11 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 
-from graphs.state import StandardMaterial
+from graphs.state import (
+    JiqizhixinCollectorInput,
+    JiqizhixinCollectorOutput,
+    RawMaterial,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,81 +48,79 @@ def _match_ai_keywords(text: str) -> bool:
     return any(keyword in text_lower for keyword in AI_KEYWORDS)
 
 
-def jiqizhixin_collector_node(state=None) -> List[StandardMaterial]:
-    """机器之心采集器
+def _fetch_rss() -> List[dict]:
+    """尝试 RSS 抓取。失败返回 []。"""
+    try:
+        feed = feedparser.parse(JIQIZHIXIN_RSS)
+        if not feed.entries:
+            logger.debug("机器之心 RSS 返回空")
+            return []
+        return [dict(e) for e in feed.entries[:20]]
+    except Exception as e:
+        logger.debug(f"机器之心 RSS 抓取失败: {type(e).__name__}: {e}")
+        return []
 
-    Returns:
-        List[StandardMaterial]: 采集到的素材列表
-    """
-    materials = []
 
+def _entry_to_raw(entry: dict) -> RawMaterial | None:
+    """把 RSS entry 转成 RawMaterial，过滤非 AI 内容。"""
+    title = (entry.get("title") or "").strip()
+    url = (entry.get("link") or "").strip()
+    if not title or not url:
+        return None
+    summary = (entry.get("summary") or "").strip()
+    if summary:
+        try:
+            soup = BeautifulSoup(summary, "html.parser")
+            summary = soup.get_text().strip()
+        except Exception:
+            pass
+
+    if not _match_ai_keywords(f"{title} {summary}"):
+        return None
+
+    publish_time = ""
+    published = entry.get("published_parsed")
+    if published:
+        try:
+            publish_time = datetime(*published[:6]).isoformat()
+        except Exception:
+            pass
+
+    return RawMaterial(
+        url=url,
+        title=title,
+        snippet=summary[:300],
+        content=summary,
+        source="jiqizhixin",
+        publish_time=publish_time or None,
+        extra_data={
+            "source_type": "rss",
+            "source_name": "机器之心",
+            "category_zh": "AI 资讯",
+        },
+    )
+
+
+def jiqizhixin_collector_node(state: JiqizhixinCollectorInput) -> JiqizhixinCollectorOutput:
+    """机器之心采集器。RSS 失败时 graceful 返回空，不抛异常。"""
+    materials: List[RawMaterial] = []
     try:
         logger.info("开始采集机器之心 RSS...")
-
-        # 获取 RSS feed
-        feed = feedparser.parse(JIQIZHIXIN_RSS)
-
-        if not feed.entries:
-            logger.warning("机器之心 RSS 返回空结果")
-            return materials
-
-        for entry in feed.entries[:20]:  # 限制最多 20 条
-            try:
-                title = entry.get("title", "").strip()
-                url = entry.get("link", "").strip()
-                summary = entry.get("summary", "").strip()
-
-                # 清理 HTML 标签
-                if summary:
-                    soup = BeautifulSoup(summary, "html.parser")
-                    summary = soup.get_text().strip()
-
-                # 发布时间
-                published = entry.get("published_parsed")
-                publish_time = ""
-                if published:
-                    try:
-                        publish_time = datetime(*published[:6]).isoformat()
-                    except Exception:
-                        pass
-
-                # AI 关键词过滤
-                full_text = f"{title} {summary}"
-                if not _match_ai_keywords(full_text):
-                    logger.debug(f"机器之心: 非 AI 内容跳过 - {title[:30]}")
-                    continue
-
-                # 构造素材
-                material = StandardMaterial(
-                    url=url,
-                    title=title,
-                    snippet=summary[:300] if len(summary) > 300 else summary,
-                    content=summary,
-                    source="jiqizhixin",
-                    publish_time=publish_time,
-                    category="AI 资讯",
-                    extra_data={
-                        "source_type": "rss",
-                        "source_name": "机器之心"
-                    }
-                )
-                materials.append(material)
-
-            except Exception as e:
-                logger.warning(f"机器之心单条解析失败: {e}")
-                continue
-
+        entries = _fetch_rss()
+        for entry in entries:
+            mat = _entry_to_raw(entry)
+            if mat is not None:
+                materials.append(mat)
+        # 限制条数
+        materials = materials[: state.max_per_source]
         logger.info(f"机器之心采集完成: {len(materials)} 条")
-
     except Exception as e:
-        logger.error(f"机器之心采集失败: {e}")
+        logger.error(f"机器之心采集失败: {type(e).__name__}: {e}")
+    return JiqizhixinCollectorOutput(jiqizhixin_materials=materials)
 
-    return materials
 
-
-# 兼容性：作为 LangGraph 节点
-def jiqizhixin_node(state) -> dict:
-    """LangGraph 节点包装"""
-    materials = jiqizhixin_collector_node(state)
-    existing = state.get("raw_materials", [])
-    return {"raw_materials": existing + materials}
+# 兼容旧调用：保留 list 风格的入口（方便单测与外部脚本）
+def jiqizhixin_collector_legacy(state=None) -> List[dict]:
+    """旧签名兼容层：返回 dict 列表而非 Pydantic 模型。已废弃，新代码请用 jiqizhixin_collector_node。"""
+    out = jiqizhixin_collector_node(JiqizhixinCollectorInput(max_per_source=20))
+    return [m.model_dump() for m in out.jiqizhixin_materials]

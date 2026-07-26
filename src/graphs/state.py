@@ -44,6 +44,11 @@ class GlobalState(BaseModel):
     newsnow_materials: List[RawMaterial] = Field(default_factory=list)
     agent_reach_materials: List[RawMaterial] = Field(default_factory=list, description="Agent-Reach CLI 采集（可选第 7 路）")
     feedgrab_materials: List[RawMaterial] = Field(default_factory=list, description="FeedGrab CLI 采集（可选第 8 路，mpweixin/xhs/ytb/reddit 等）")
+    last30days_materials: List[RawMaterial] = Field(default_factory=list, description="Last30days CLI 采集（可选第 9 路，X/Reddit/HN/YouTube 过去 30 天热点）")
+    jiqizhixin_materials: List[RawMaterial] = Field(default_factory=list, description="机器之心 RSS / 网页采集（第 10 路）")
+    qbitai_materials: List[RawMaterial] = Field(default_factory=list, description="量子位首页抓取（第 11 路）")
+    zhihu_ai_materials: List[RawMaterial] = Field(default_factory=list, description="知乎 AI 话题（第 12 路）")
+    mediacrawler_materials: List[RawMaterial] = Field(default_factory=list, description="MediaCrawler CLI 采集（可选第 13 路，多平台社媒）")
 
     # 中间结果
     merged_materials: List[StandardMaterial] = Field(default_factory=list)
@@ -181,6 +186,49 @@ class FeedgrabCollectorOutput(BaseModel):
     feedgrab_materials: List[RawMaterial] = Field(default_factory=list)
 
 
+class Last30daysCollectorInput(BaseModel):
+    max_per_source: int = 10
+    queries: List[str] = Field(default_factory=list, description="传给 last30days CLI 的查询列表（话题 / 关键词）")
+
+
+class Last30daysCollectorOutput(BaseModel):
+    last30days_materials: List[RawMaterial] = Field(default_factory=list)
+
+
+class JiqizhixinCollectorInput(BaseModel):
+    max_per_source: int = 10
+
+
+class JiqizhixinCollectorOutput(BaseModel):
+    jiqizhixin_materials: List[RawMaterial] = Field(default_factory=list)
+
+
+class QbitaiCollectorInput(BaseModel):
+    max_per_source: int = 10
+
+
+class QbitaiCollectorOutput(BaseModel):
+    qbitai_materials: List[RawMaterial] = Field(default_factory=list)
+
+
+class ZhihuAICollectorInput(BaseModel):
+    max_per_source: int = 10
+
+
+class ZhihuAICollectorOutput(BaseModel):
+    zhihu_ai_materials: List[RawMaterial] = Field(default_factory=list)
+
+
+class MediaCrawlerCollectorInput(BaseModel):
+    max_per_source: int = 30
+    platforms: List[str] = Field(default_factory=list, description="目标平台列表（xhs/dy/ks/bili/wb/tieba/zhihu）")
+    keywords: List[str] = Field(default_factory=list, description="搜索关键词")
+
+
+class MediaCrawlerCollectorOutput(BaseModel):
+    mediacrawler_materials: List[RawMaterial] = Field(default_factory=list)
+
+
 class MaterialMergeInput(BaseModel):
     aihot_materials: List[RawMaterial] = Field(default_factory=list)
     ainews_materials: List[RawMaterial] = Field(default_factory=list)
@@ -190,6 +238,11 @@ class MaterialMergeInput(BaseModel):
     newsnow_materials: List[RawMaterial] = Field(default_factory=list)
     agent_reach_materials: List[RawMaterial] = Field(default_factory=list)
     feedgrab_materials: List[RawMaterial] = Field(default_factory=list)
+    last30days_materials: List[RawMaterial] = Field(default_factory=list)
+    jiqizhixin_materials: List[RawMaterial] = Field(default_factory=list)
+    qbitai_materials: List[RawMaterial] = Field(default_factory=list)
+    zhihu_ai_materials: List[RawMaterial] = Field(default_factory=list)
+    mediacrawler_materials: List[RawMaterial] = Field(default_factory=list)
 
 
 class MaterialMergeOutput(BaseModel):

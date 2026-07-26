@@ -12,6 +12,8 @@ dependencies = [
     "requests>=2.31,<3",
     "python-dotenv>=1.0,<2",
     "rich>=13,<15",
+    "beautifulsoup4>=4.12,<5",  # qbitai / zhihu / jiqizhixin 网页解析
+    "feedparser>=6,<7",  # jiqizhixin RSS 解析
 ]
 
 [dependency-groups]

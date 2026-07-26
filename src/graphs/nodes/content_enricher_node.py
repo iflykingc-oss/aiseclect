@@ -4,6 +4,10 @@
 - 目标：解决聚合源只给标题/URL 导致 LLM 编造事实的问题
 - 抓取失败时不再一刀切丢弃：信息足够的 GitHub / watchlist / 多源热点会保留
 
+抓取路径（按优先级）：
+1. Firecrawl（若 FIRECRAWL_API_KEY 已配置）：拿干净 markdown，反爬强 / JS 渲染页都更稳
+2. requests 兜底（原有路径）：拿 HTML 后正则清洗
+
 性能：并发抓取（ThreadPoolExecutor，max_workers=10），单节点整体超时 30s
 """
 from __future__ import annotations
@@ -21,6 +25,7 @@ from graphs.state import (
     ScoredMaterial,
 )
 from graphs.nodes.content_cleaner_node import _strip_html, _strip_boilerplate, _normalize_whitespace
+from tools import firecrawl
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +43,27 @@ MAX_WORKERS = 10  # 并发抓取数
 MAX_FETCH_CHARS = 8000
 UA = "Mozilla/5.0 (compatible; aiseclect/1.0; +https://github.com/iflykingc-oss/aiseclect)"
 
+# Firecrawl 抓取的 markdown 限长，避免 LLM 上下文爆炸
+FIRECRAWL_MAX_CHARS = 2000
+
 
 def _fetch_article(url: str) -> str:
-    """抓单个 URL 的正文。失败或过短返回空字符串。SSL 错误不重试（避免长时间挂起）。"""
+    """抓单个 URL 的正文。优先 Firecrawl，未配置或失败则降级到 requests + 正则清洗。
+
+    返回值约定：失败或过短返回空字符串。
+    """
+    # 路径 1：Firecrawl（若配置了 key）
+    if firecrawl.is_available():
+        try:
+            result = firecrawl.scrape_url(url)
+            if result.success and result.markdown:
+                logger.debug(f"Firecrawl 抓取成功 {url}: {len(result.markdown)} chars")
+                return result.markdown[:FIRECRAWL_MAX_CHARS]
+            logger.debug(f"Firecrawl 抓取失败 {url}: {result.error}")
+        except Exception as e:
+            logger.debug(f"Firecrawl 异常 {url}: {type(e).__name__}: {str(e)[:100]}")
+
+    # 路径 2：requests 兜底
     try:
         resp = requests.get(url, timeout=FETCH_TIMEOUT, headers={"User-Agent": UA}, allow_redirects=True)
     except SSLError as e:
@@ -112,13 +135,15 @@ def content_enricher_node(state: ContentEnricherInput) -> ContentEnricherOutput:
 
     # 2) 并发抓需要补齐的（线程池，节点整体超时 NODE_TOTAL_TIMEOUT）
     fetch_results: dict[str, str] = {}
+    firecrawl_hits = 0
     if to_fetch:
         per_url_timeout = max(2, NODE_TOTAL_TIMEOUT // max(1, len(to_fetch) // MAX_WORKERS + 1))
 
         def _do_fetch(mat: ScoredMaterial) -> tuple[str, str]:
-            return mat.url, _fetch_article(mat.url)
+            body = _fetch_article(mat.url)
+            return mat.url, body
 
-        logger.info(f"正文补齐: {len(to_fetch)} 条开始并发抓取 (workers={MAX_WORKERS}, per-url={per_url_timeout}s)")
+        logger.info(f"正文补齐: {len(to_fetch)} 条开始并发抓取 (workers={MAX_WORKERS}, per-url={per_url_timeout}s, firecrawl={'on' if firecrawl.is_available() else 'off'})")
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
             futures = [ex.submit(_do_fetch, m) for m in to_fetch]
             try:
@@ -144,6 +169,7 @@ def content_enricher_node(state: ContentEnricherInput) -> ContentEnricherOutput:
         if len(fetched) >= MIN_CONTENT_FOR_LLM:
             enriched.append(mat.model_copy(update={"content": fetched[:2000]}))
             enriched_count += 1
+            firecrawl_hits += 1 if firecrawl.is_available() else 0
             continue
         if _has_enough_evidence(mat):
             fallback = _evidence_text(mat)[:2000]
@@ -153,9 +179,11 @@ def content_enricher_node(state: ContentEnricherInput) -> ContentEnricherOutput:
             dropped_count += 1
             dropped_titles.append(mat.title[:40])
 
+    fc_note = f" / Firecrawl 成功 ≥{MIN_CONTENT_FOR_LLM} 字符 {firecrawl_hits}" if firecrawl.is_available() else ""
     logger.info(
         f"正文补齐: 输入 {len(materials)} 条 / 抓取 {len(fetch_results)}/{len(to_fetch)} / "
         f"补齐 {enriched_count} / 抓取失败但保留 {kept_without_fetch} / 丢弃 {dropped_count}（信息不足）"
+        f"{fc_note}"
     )
     for t in dropped_titles[:5]:
         logger.info(f"  丢弃: {t}")

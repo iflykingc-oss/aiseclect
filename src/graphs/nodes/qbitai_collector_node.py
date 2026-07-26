@@ -1,20 +1,25 @@
-"""量子位数据采集节点
+"""量子位数据采集节点（第 11 路）
 
 采集来源: https://www.qbitai.com/
 内容类型: AI 产业新闻、技术解读、公司动态
 预期产出: 8-12 条/日 AI 产业新闻
+
+签名已迁移至 LangGraph 节点约定：(state: QbitaiCollectorInput) -> QbitaiCollectorOutput
 """
 from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
 from typing import List
 
 import requests
 from bs4 import BeautifulSoup
 
-from graphs.state import StandardMaterial
+from graphs.state import (
+    QbitaiCollectorInput,
+    QbitaiCollectorOutput,
+    RawMaterial,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,89 +52,76 @@ def _match_ai_keywords(text: str) -> bool:
     return any(keyword in text_lower for keyword in AI_KEYWORDS)
 
 
-def qbitai_collector_node(state=None) -> List[StandardMaterial]:
-    """量子位采集器
+def _article_to_raw(article) -> RawMaterial | None:
+    """把 BS4 article element 转 RawMaterial。"""
+    try:
+        title_elem = article.find(["h1", "h2", "h3", "a"])
+        if not title_elem:
+            return None
+        title = title_elem.get_text(strip=True)
+        url = title_elem.get("href") or (article.find("a") or {}).get("href") if article.find("a") else None
+        if not title or not url:
+            return None
+        if not url.startswith("http"):
+            url = "https://www.qbitai.com" + url
 
-    Returns:
-        List[StandardMaterial]: 采集到的素材列表
-    """
-    materials = []
+        summary_elem = article.find(["p", "div"], class_=re.compile(r"excerpt|summary|desc"))
+        summary = summary_elem.get_text(strip=True) if summary_elem else ""
 
+        if not _match_ai_keywords(f"{title} {summary}"):
+            return None
+
+        return RawMaterial(
+            url=url,
+            title=title,
+            snippet=summary[:300] if summary else "",
+            content=summary,
+            source="qbitai",
+            publish_time=None,
+            extra_data={
+                "source_type": "web_scrape",
+                "source_name": "量子位",
+                "category_zh": "AI 资讯",
+            },
+        )
+    except Exception as e:
+        logger.debug(f"量子位单条解析失败: {type(e).__name__}: {e}")
+        return None
+
+
+def qbitai_collector_node(state: QbitaiCollectorInput) -> QbitaiCollectorOutput:
+    """量子位采集器。失败时 graceful 返回空。"""
+    materials: List[RawMaterial] = []
     try:
         logger.info("开始采集量子位...")
-
-        # 请求首页
         resp = requests.get(QBITAI_HOME, headers=HEADERS, timeout=10)
         resp.raise_for_status()
-        resp.encoding = 'utf-8'
-
+        resp.encoding = "utf-8"
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # 查找文章列表（需要根据实际 HTML 结构调整）
+        # 查找文章列表（按优先级尝试多种 selector）
         articles = soup.find_all("article", limit=20)
         if not articles:
-            # 备选：查找 class 包含 post/item 的元素
             articles = soup.find_all(class_=re.compile(r"post|item|article"), limit=20)
 
         if not articles:
-            logger.warning(f"量子位页面未找到文章列表，HTML 长度: {len(resp.text)}")
-            return materials
+            logger.debug(f"量子位页面未找到文章列表，HTML 长度: {len(resp.text)}")
+            return QbitaiCollectorOutput(qbitai_materials=[])
 
         for article in articles:
-            try:
-                # 提取标题和链接
-                title_elem = article.find(["h1", "h2", "h3", "a"])
-                if not title_elem:
-                    continue
+            mat = _article_to_raw(article)
+            if mat is not None:
+                materials.append(mat)
 
-                title = title_elem.get_text(strip=True)
-                url = title_elem.get("href") or article.find("a").get("href")
-
-                # 补全相对 URL
-                if url and not url.startswith("http"):
-                    url = "https://www.qbitai.com" + url
-
-                # 提取摘要
-                summary_elem = article.find(["p", "div"], class_=re.compile(r"excerpt|summary|desc"))
-                summary = summary_elem.get_text(strip=True) if summary_elem else ""
-
-                # AI 关键词过滤
-                full_text = f"{title} {summary}"
-                if not _match_ai_keywords(full_text):
-                    logger.debug(f"量子位: 非 AI 内容跳过 - {title[:30]}")
-                    continue
-
-                # 构造素材
-                material = StandardMaterial(
-                    url=url,
-                    title=title,
-                    snippet=summary[:300] if len(summary) > 300 else summary,
-                    content=summary,
-                    source="qbitai",
-                    publish_time="",  # 量子位页面通常不显示时间
-                    category="AI 资讯",
-                    extra_data={
-                        "source_type": "web_scrape",
-                        "source_name": "量子位"
-                    }
-                )
-                materials.append(material)
-
-            except Exception as e:
-                logger.warning(f"量子位单条解析失败: {e}")
-                continue
-
+        materials = materials[: state.max_per_source]
         logger.info(f"量子位采集完成: {len(materials)} 条")
-
     except Exception as e:
-        logger.error(f"量子位采集失败: {e}")
+        logger.error(f"量子位采集失败: {type(e).__name__}: {e}")
+    return QbitaiCollectorOutput(qbitai_materials=materials)
 
-    return materials
 
-
-# 兼容性：作为 LangGraph 节点
-def qbitai_node(state) -> dict:
-    """LangGraph 节点包装"""
-    materials = qbitai_collector_node(state)
-    existing = state.get("raw_materials", [])
-    return {"raw_materials": existing + materials}
+# 兼容旧调用
+def qbitai_collector_legacy(state=None) -> List[dict]:
+    """已废弃：新代码请用 qbitai_collector_node。"""
+    out = qbitai_collector_node(QbitaiCollectorInput(max_per_source=20))
+    return [m.model_dump() for m in out.qbitai_materials]

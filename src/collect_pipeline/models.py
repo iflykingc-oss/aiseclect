@@ -35,6 +35,7 @@ class StandardMaterial(BaseModel):
     source: str = ""
     publish_time: Optional[str] = None
     category: str = "未分类"
+    tech_depth: float = Field(default=70.0, description="技术深度 0-100；值越高越偏硬核/技术；route_to_generator 用 ≤60 判定 XHS 友好")
     extra_data: dict = Field(default_factory=dict, description="采集阶段保留的来源元数据")
 
 
@@ -49,6 +50,7 @@ class ScoredMaterial(BaseModel):
     category: str = "未分类"
     heat_score: float = 0.0
     score_reason: str = ""
+    tech_depth: float = Field(default=70.0, description="技术深度 0-100；值越高越偏硬核/技术；route_to_generator 用 ≤60 判定 XHS 友好")
     extra_data: dict = Field(default_factory=dict, description="采集阶段保留的来源元数据")
     related_urls: List[str] = Field(default_factory=list, description="同事件其他来源 URL（聚类后填充）")
     cluster_size: int = 1

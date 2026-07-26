@@ -17,6 +17,45 @@ from graphs.state import (
 logger = logging.getLogger(__name__)
 
 
+# 分类 → 技术深度 (0-100)
+# ≤60 → XHS 友好（消费/大众/产品），>60 → 偏硬核（开发者/论文/底层）
+# 与 graph.route_to_generator 的判定阈值一致
+_CATEGORY_TECH_DEPTH: dict[str, float] = {
+    # 高 tech (>60)
+    "论文研究": 95.0,
+    "模型发布": 85.0,
+    "开源治理": 80.0,
+    "安全隐私": 80.0,
+    "网络工具": 85.0,
+    "开源项目": 75.0,
+    "行业动态": 75.0,
+    "开发者社区": 70.0,
+    "科技资讯": 65.0,
+    "多模态生成": 65.0,
+    "科技产品": 60.0,
+    # 中 tech (~55)
+    "综合资讯": 55.0,
+    # 低 tech / XHS 友好 (≤60)
+    "AI 产品": 55.0,
+    "产品发布": 55.0,
+    "行业热点": 50.0,
+    "财经资讯": 50.0,
+    "效率工具": 45.0,
+    "争议事件": 45.0,
+    "数码社区": 40.0,
+    "大众讨论": 40.0,
+    "社区热议": 40.0,
+    "视频热搜": 35.0,
+    "大众热搜": 30.0,
+    "社会新闻": 30.0,
+}
+
+
+def _tech_depth_from_category(category: str) -> float:
+    """根据分类返回技术深度 (0-100)，未知分类默认 70（tech-leaning 中性）。"""
+    return _CATEGORY_TECH_DEPTH.get(category or "", 70.0)
+
+
 def _category_from_raw(raw: RawMaterial) -> str:
     """轻量分类：优先用源数据分类，其次按 source/title 规则兜底。"""
     extra_category_zh = (raw.extra_data or {}).get("category_zh")
@@ -103,6 +142,21 @@ def material_merge_node(state: MaterialMergeInput) -> MaterialMergeOutput:
     # 第 8 路：feedgrab（CLI 不在时为空列表）
     if getattr(state, "feedgrab_materials", None):
         all_materials.extend(state.feedgrab_materials)
+    # 第 9 路：last30days（CLI 不在时为空列表）
+    if getattr(state, "last30days_materials", None):
+        all_materials.extend(state.last30days_materials)
+    # 第 10 路：jiqizhixin（RSS 失败时为空列表）
+    if getattr(state, "jiqizhixin_materials", None):
+        all_materials.extend(state.jiqizhixin_materials)
+    # 第 11 路：qbitai（首页抓取失败时为空列表）
+    if getattr(state, "qbitai_materials", None):
+        all_materials.extend(state.qbitai_materials)
+    # 第 12 路：zhihu_ai（API/网页失败时为空列表）
+    if getattr(state, "zhihu_ai_materials", None):
+        all_materials.extend(state.zhihu_ai_materials)
+    # 第 13 路：mediacrawler（CLI 不在时为空列表）
+    if getattr(state, "mediacrawler_materials", None):
+        all_materials.extend(state.mediacrawler_materials)
 
     merged: List[StandardMaterial] = []
     for raw in all_materials:
@@ -117,6 +171,7 @@ def material_merge_node(state: MaterialMergeInput) -> MaterialMergeOutput:
                 source=raw.source or "",
                 publish_time=raw.publish_time,
                 category=_category_from_raw(raw),
+                tech_depth=_tech_depth_from_category(_category_from_raw(raw)),
                 extra_data=raw.extra_data or {},
             )
         )

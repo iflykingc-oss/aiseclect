@@ -1,6 +1,6 @@
 """
 工作流主图编排
-- 飞书初始化 → 5 路并行采集 → 合并 → 去重 → 打分 → 事件聚类 → 清洗 → 推文生成 → 飞书写入
+- 飞书初始化 → 9 路并行采集 → 合并 → 去重 → 打分 → 事件聚类 → 清洗 → 推文生成 → 飞书写入
 """
 from langgraph.graph import StateGraph, END
 
@@ -28,6 +28,16 @@ from graphs.state import (
     AgentReachCollectorOutput,
     FeedgrabCollectorInput,
     FeedgrabCollectorOutput,
+    Last30daysCollectorInput,
+    Last30daysCollectorOutput,
+    JiqizhixinCollectorInput,
+    JiqizhixinCollectorOutput,
+    QbitaiCollectorInput,
+    QbitaiCollectorOutput,
+    ZhihuAICollectorInput,
+    ZhihuAICollectorOutput,
+    MediaCrawlerCollectorInput,
+    MediaCrawlerCollectorOutput,
     MaterialMergeInput,
     MaterialMergeOutput,
     DedupFilterInput,
@@ -53,6 +63,11 @@ from graphs.nodes.github_collector_node import github_collector_node
 from graphs.nodes.newsnow_collector_node import newsnow_collector_node
 from graphs.nodes.agent_reach_collector_node import agent_reach_collector_node
 from graphs.nodes.feedgrab_collector_node import feedgrab_collector_node
+from graphs.nodes.last30days_collector_node import last30days_collector_node
+from graphs.nodes.jiqizhixin_collector_node import jiqizhixin_collector_node
+from graphs.nodes.qbitai_collector_node import qbitai_collector_node
+from graphs.nodes.zhihu_ai_collector_node import zhihu_ai_collector_node
+from graphs.nodes.mediacrawler_collector_node import mediacrawler_collector_node
 from graphs.nodes.material_merge_node import material_merge_node
 from graphs.nodes.dedup_filter_node import dedup_filter_node
 from graphs.nodes.heat_scorer_node import heat_scorer_node
@@ -79,6 +94,11 @@ def _select(state: GlobalState, key: str):
         "newsnow_collector": NewsNowCollectorInput,
         "agent_reach_collector": AgentReachCollectorInput,
         "feedgrab_collector": FeedgrabCollectorInput,
+        "last30days_collector": Last30daysCollectorInput,
+        "jiqizhixin_collector": JiqizhixinCollectorInput,
+        "qbitai_collector": QbitaiCollectorInput,
+        "zhihu_ai_collector": ZhihuAICollectorInput,
+        "mediacrawler_collector": MediaCrawlerCollectorInput,
         "material_merge": MaterialMergeInput,
         "dedup_filter": DedupFilterInput,
         "heat_scorer": HeatScorerInput,
@@ -120,6 +140,11 @@ builder.add_node("github_collector", _wrap("github_collector", github_collector_
 builder.add_node("newsnow_collector", _wrap("newsnow_collector", newsnow_collector_node))
 builder.add_node("agent_reach_collector", _wrap("agent_reach_collector", agent_reach_collector_node))
 builder.add_node("feedgrab_collector", _wrap("feedgrab_collector", feedgrab_collector_node))
+builder.add_node("last30days_collector", _wrap("last30days_collector", last30days_collector_node))
+builder.add_node("jiqizhixin_collector", _wrap("jiqizhixin_collector", jiqizhixin_collector_node))
+builder.add_node("qbitai_collector", _wrap("qbitai_collector", qbitai_collector_node))
+builder.add_node("zhihu_ai_collector", _wrap("zhihu_ai_collector", zhihu_ai_collector_node))
+builder.add_node("mediacrawler_collector", _wrap("mediacrawler_collector", mediacrawler_collector_node))
 builder.add_node("material_merge", _wrap("material_merge", material_merge_node))
 builder.add_node("dedup_filter", _wrap("dedup_filter", dedup_filter_node))
 builder.add_node("heat_scorer", _wrap("heat_scorer", heat_scorer_node))
@@ -140,9 +165,14 @@ builder.add_edge("feishu_table_init", "github_collector")
 builder.add_edge("feishu_table_init", "newsnow_collector")
 builder.add_edge("feishu_table_init", "agent_reach_collector")
 builder.add_edge("feishu_table_init", "feedgrab_collector")
+builder.add_edge("feishu_table_init", "last30days_collector")
+builder.add_edge("feishu_table_init", "jiqizhixin_collector")
+builder.add_edge("feishu_table_init", "qbitai_collector")
+builder.add_edge("feishu_table_init", "zhihu_ai_collector")
+builder.add_edge("feishu_table_init", "mediacrawler_collector")
 
 builder.add_edge(
-    ["aihot_collector", "ainews_collector", "rss_collector", "tavily_collector", "github_collector", "newsnow_collector", "agent_reach_collector", "feedgrab_collector"],
+    ["aihot_collector", "ainews_collector", "rss_collector", "tavily_collector", "github_collector", "newsnow_collector", "agent_reach_collector", "feedgrab_collector", "last30days_collector", "jiqizhixin_collector", "qbitai_collector", "zhihu_ai_collector", "mediacrawler_collector"],
     "material_merge",
 )
 

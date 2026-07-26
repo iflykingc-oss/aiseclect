@@ -187,6 +187,7 @@ def content_cleaner_node(state: ContentCleanerInput) -> ContentCleanerOutput:
                 category=mat.category,
                 heat_score=mat.heat_score,
                 score_reason=mat.score_reason,
+                tech_depth=mat.tech_depth,
                 related_urls=mat.related_urls,
                 cluster_size=mat.cluster_size,
                 extra_data=extra,
