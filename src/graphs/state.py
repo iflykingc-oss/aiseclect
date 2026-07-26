@@ -73,6 +73,7 @@ class GlobalState(BaseModel):
     clear_dedup: bool = False
     write_to_feishu: bool = True
     target_platform: str = "mixed"
+    freshness_hours: Optional[int] = Field(default=None, description="飞书表里 N 小时前已存在的 URL 视为可重新入；None=全部视为已存在")
 
     # 落盘
     output_path: str = ""
@@ -302,6 +303,14 @@ class ContentCleanerOutput(BaseModel):
     cleaned_materials: List[ScoredMaterial] = Field(default_factory=list)
 
 
+class PlatformRouterInput(BaseModel):
+    cleaned_materials: List[ScoredMaterial] = Field(default_factory=list)
+
+
+class PlatformRouterOutput(BaseModel):
+    platform_decisions: dict = Field(default_factory=dict, description="url → PlatformDecision dict")
+
+
 class TweetGeneratorInput(BaseModel):
     cleaned_materials: List[ScoredMaterial] = Field(default_factory=list)
     min_heat_score: float = 0.0
@@ -349,6 +358,7 @@ class FeishuWriterInput(BaseModel):
     write_to_feishu: bool = True
     clear_dedup: bool = False  # True 时跳过飞书表已有 URL 检查
     total_tweets: int = 0
+    freshness_hours: Optional[int] = Field(default=None, description="飞书表里 N 小时前已存在的 URL 视为可重新入；None=全部视为已存在")
 
 
 class FeishuWriterOutput(BaseModel):

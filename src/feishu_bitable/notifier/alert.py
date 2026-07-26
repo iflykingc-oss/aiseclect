@@ -126,14 +126,17 @@ class FeishuNotifier:
             color="red",
         )
 
-    def feishu_write_zero(self, drafted: int) -> bool:
+    def feishu_write_zero(self, drafted: int, existing_in_table: int = 0) -> bool:
         """飞书写入 0 条但本地有草稿。"""
         return self.interactive(
             title="⚠️ 飞书写入 0 条",
             lines=[
                 f"**本地推文**: {drafted} 条",
-                "**飞书写入**: 0 条",
-                "**可能原因**: App 权限没勾 Bitable / 字段缺失 / 单选项不存在",
+                f"**飞书写入**: 0 条",
+                f"**已有/重复跳过**: {existing_in_table} 条（飞书表里已存在的 URL）",
+                "**实际原因**: 全部为已存在 URL，dedup 命中。",
+                "**这不是权限/字段问题** — 飞书 API 调用正常，是表里堆了 400+ 待审核。",
+                "**建议**: 用 `scripts/_inspect_feishu.py` 看积压，或加 `--freshness-hours 24` 限制只入新内容。",
             ],
             color="orange",
         )

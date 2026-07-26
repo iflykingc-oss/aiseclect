@@ -3,12 +3,13 @@
 - 把 tweet_drafts 写入目标 Bitable
 - Wiki 内嵌模式用 app_token（已在 init 节点解析）
 - 修复 Bug #2：不再把 page_id 当作 app_token 兜底
+- 2026-07-27：支持 freshness_hours —— 飞书表里 N 小时前已存在的 URL 视为可重新入
 """
 from __future__ import annotations
 
 import logging
 import time
-from typing import List
+from typing import List, Optional, Tuple
 from urllib.parse import parse_qsl, urlparse, urlunparse
 
 from graphs.state import FeishuWriterInput, FeishuWriterOutput, TweetDraft
@@ -56,14 +57,37 @@ def _extract_url_value(value) -> str:
     return str(value or "")
 
 
-def _existing_links(client: FeishuClient, app_token: str, table_id: str) -> set[str]:
-    links: set[str] = set()
+def _existing_links(
+    client: FeishuClient,
+    app_token: str,
+    table_id: str,
+    freshness_hours: Optional[int] = None,
+) -> Tuple[set[str], int, int]:
+    """返回 (近期内已存在 URL 集合, 总记录数, 被 freshness 过滤的旧记录数)。
+
+    freshness_hours = None → 全部视为已存在（最严）
+    freshness_hours = 168 → 只把 7 天内的视为已存在
+    """
+    fresh: set[str] = set()
+    total = 0
+    too_old = 0
+    cutoff_ms: Optional[int] = None
+    if freshness_hours and freshness_hours > 0:
+        cutoff_ms = int((time.time() - freshness_hours * 3600) * 1000)
     for rec in client.list_records(app_token, table_id):
+        total += 1
         fields = rec.get("fields") or {}
         url = _extract_url_value(fields.get("链接"))
-        if url:
-            links.add(_normalize_url(url.strip()))
-    return links
+        if not url:
+            continue
+        norm = _normalize_url(url.strip())
+        if cutoff_ms is not None:
+            created_ms = fields.get("创建时间")
+            if isinstance(created_ms, (int, float)) and created_ms < cutoff_ms:
+                too_old += 1
+                continue  # 旧记录视为可重新入
+        fresh.add(norm)
+    return fresh, total, too_old
 
 
 def _build_records(drafts: List[TweetDraft], existing_links: set[str] | None = None) -> List[dict]:
@@ -138,11 +162,25 @@ def feishu_writer_node(state: FeishuWriterInput) -> FeishuWriterOutput:
             # clear_dedup=True：跳过飞书表 dedup 检查，让新推文强制入库（dedup_state 已被清空）
             logger.info("clear_dedup=True，跳过飞书表已有链接检查，所有推文强制入库")
             existing = set()
+            existing_total = 0
+            existing_too_old = 0
         else:
-            existing = _existing_links(client, state.feishu_app_token, state.feishu_table_id)
+            existing, existing_total, existing_too_old = _existing_links(
+                client,
+                state.feishu_app_token,
+                state.feishu_table_id,
+                freshness_hours=getattr(state, "freshness_hours", None),
+            )
+            logger.info(
+                f"飞书表已加载: 总 {existing_total} 条 / "
+                f"视为已存在 {len(existing)} 条 / 视为可重入 {existing_too_old} 条"
+                + (f" (freshness={getattr(state, 'freshness_hours', None)}h)" if getattr(state, "freshness_hours", None) else "")
+            )
     except Exception as e:
         logger.warning(f"读取飞书已有链接失败，将继续尝试写入: {e}")
         existing = set()
+        existing_total = 0
+        existing_too_old = 0
 
     records = _build_records(state.tweet_drafts, existing_links=existing)
     skipped_existing = len(state.tweet_drafts) - len(records)
