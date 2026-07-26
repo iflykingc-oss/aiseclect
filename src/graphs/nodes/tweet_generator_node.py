@@ -66,6 +66,20 @@ DEFAULT_IMAGE_PROMPT_RUBRIC: Dict[str, Any] = {
     "max_length": 220,
 }
 
+# Profile guides 默认（防止 profile_guides.json 缺失或解析失败）
+DEFAULT_PROFILE_GUIDES: Dict[str, Any] = {
+    "profiles": {
+        "ai_tools_consumer": {
+            "label": "AI 工具消费者",
+            "audience": "想用 AI 工具的普通人",
+            "editorial_tone": ["实测", "对比", "避坑"],
+            "must_have_actionable_item": True,
+            "platform_priority": "X+小红书",
+        },
+    },
+    "_selection_rules": {"by_category": {}, "by_source": {}, "fallback": "ai_tools_consumer"},
+}
+
 # 禁用词分两层：
 # - HARD_BANNED：命中即拒（hashtag、纯营销词、个人情绪化表达）
 # - SOFT_BANNED：命中只扣分（AI 套话、营销词、行业黑话）—— 避免误杀有判断力的圈层内容
@@ -266,7 +280,7 @@ def _chunked(items: list, size: int) -> list:
     return [items[i : i + size] for i in range(0, len(items), size)]
 
 
-def _material_payload(m: ScoredMaterial, persona_assignments: dict) -> dict:
+def _material_payload(m: ScoredMaterial, persona_assignments: dict, profile_guides: Dict[str, Any]) -> dict:
     """给 LLM 的素材 JSON；只传已有字段，不新增内部输出字段。"""
     payload = {
         "url": m.url,
@@ -277,6 +291,7 @@ def _material_payload(m: ScoredMaterial, persona_assignments: dict) -> dict:
         "category": m.category,
         "heat_score": m.heat_score,
         "_persona": persona_assignments.get(m.url, {}),
+        "_profile": _select_profile_for_material(m, profile_guides),
         "extra_data": m.extra_data,
     }
     optional = {
@@ -289,15 +304,24 @@ def _material_payload(m: ScoredMaterial, persona_assignments: dict) -> dict:
     return payload
 
 
-def _build_messages(llm_cfg: LLMConfig, cfg: dict, materials: List[ScoredMaterial], persona_assignments: dict):
-    """构造 LLM 调用消息，把写作视角分配注入 user_prompt。"""
+def _build_messages(llm_cfg: LLMConfig, cfg: dict, materials: List[ScoredMaterial], persona_assignments: dict, profile_guides: Dict[str, Any]):
+    """构造 LLM 调用消息，把写作视角分配 + profile 指南注入到 system prompt。"""
     from langchain_core.messages import SystemMessage, HumanMessage
 
-    materials_data = [_material_payload(m, persona_assignments) for m in materials]
+    materials_data = [_material_payload(m, persona_assignments, profile_guides) for m in materials]
     materials_json = json.dumps(materials_data, ensure_ascii=False, indent=2)
     user_prompt = Template(cfg.get("up", "")).render(materials_json=materials_json)
+
+    # 2026-07-26: 把 5 个 profile 指南注入到 sp（如 cfg.sp 包含 {{profile_guides}} 占位符则替换）
+    base_sp = cfg.get("sp", "")
+    profile_block = _render_profile_guides_block(profile_guides)
+    if "{{profile_guides}}" in base_sp:
+        sp = base_sp.replace("{{profile_guides}}", profile_block)
+    else:
+        sp = base_sp + "\n\n" + profile_block
+
     return [
-        SystemMessage(content=cfg.get("sp", "")),
+        SystemMessage(content=sp),
         HumanMessage(content=user_prompt),
     ]
 
@@ -318,13 +342,80 @@ def _load_strategy(workspace: str) -> Dict[str, Any]:
     return DEFAULT_STRATEGY
 
 
-def _call_llm_once(llm_cfg: LLMConfig, cfg: dict, materials: List[ScoredMaterial], persona_assignments: dict) -> List[dict]:
+def _load_profile_guides(workspace: str) -> Dict[str, Any]:
+    """加载 profile_guides.json（2026-07-26 新增）。失败回退到默认。"""
+    candidates = [
+        os.path.join(workspace, "config/profile_guides.json"),
+        os.path.join(os.getcwd(), "config/profile_guides.json"),
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except (OSError, ValueError) as e:
+                logger.warning(f"profile_guides 读取失败，使用默认: {e}")
+                break
+    return DEFAULT_PROFILE_GUIDES
+
+
+def _select_profile_for_material(mat: ScoredMaterial, profile_guides: Dict[str, Any]) -> str:
+    """按 category / source 选 profile key。fallback 到默认。"""
+    rules = profile_guides.get("_selection_rules") or {}
+    by_cat = rules.get("by_category") or {}
+    by_src = rules.get("by_source") or {}
+    fallback = rules.get("fallback") or "ai_tools_consumer"
+
+    if mat.category and mat.category in by_cat:
+        return by_cat[mat.category]
+    src = (mat.source or "").lower()
+    # source 可能含前缀（如 newsnow-weibo），做前缀匹配
+    for k, v in by_src.items():
+        if k in src:
+            return v
+    return fallback
+
+
+def _render_profile_guides_block(profile_guides: Dict[str, Any]) -> str:
+    """把所有 profile 渲染成一段可注入 sp 的 markdown。"""
+    profiles = profile_guides.get("profiles") or {}
+    if not profiles:
+        return ""
+    lines = ["## 5 个 Profile 风格指南（2026-07-26 新增）",
+             "",
+             "每条素材的 payload 里有 `_profile` 字段，标明它属于哪个 profile。",
+             "请根据 `_profile` 字段选择匹配的写作风格。",
+             ""]
+    for key, p in profiles.items():
+        lines.append(f"### Profile `{key}` — {p.get('label', key)}")
+        lines.append(f"- **受众**: {p.get('audience', '-')}")
+        tone = ", ".join(p.get("editorial_tone", []) or [])
+        if tone:
+            lines.append(f"- **语气**: {tone}")
+        if p.get("must_have_actionable_item"):
+            lines.append(f"- **必须含可执行项**")
+        if p.get("platform_priority"):
+            lines.append(f"- **平台优先级**: {p['platform_priority']}")
+        bt = p.get("banned_title_phrases") or []
+        if bt:
+            lines.append(f"- **禁标题词**: {', '.join(bt[:8])}")
+        sample_title = p.get("sample_title")
+        sample_tweet = p.get("sample_tweet")
+        if sample_title:
+            lines.append(f"- **示范标题**: {sample_title}")
+        if sample_tweet:
+            lines.append(f"- **示范正文**:\n\n```\n{sample_tweet}\n```")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _call_llm_once(llm_cfg: LLMConfig, cfg: dict, materials: List[ScoredMaterial], persona_assignments: dict, profile_guides: Dict[str, Any]) -> List[dict]:
     """单次 LLM 调用。"""
     if not materials:
         return []
     try:
         model = build_chat_model(llm_cfg)
-        messages = _build_messages(llm_cfg, cfg, materials, persona_assignments)
+        messages = _build_messages(llm_cfg, cfg, materials, persona_assignments, profile_guides)
         resp = invoke_with_retry(model, messages)
         text = extract_text(resp.content)
         logger.info(f"推文 LLM 响应前 800 字符: {text[:800]}")
@@ -992,6 +1083,7 @@ def tweet_generator_node(state: TweetGeneratorInput) -> TweetGeneratorOutput:
 
     llm_cfg = LLMConfig.from_env(default_model="gpt-4o-mini").merged(cfg.get("config", {}))
     strategy = _load_strategy(workspace)
+    profile_guides = _load_profile_guides(workspace)
 
     persona_assignments = {
         m.url: {"x": _pick_persona(m.source)[0], "other": _pick_persona(m.source)[1]}
@@ -1002,7 +1094,7 @@ def tweet_generator_node(state: TweetGeneratorInput) -> TweetGeneratorOutput:
     batches = _chunked(candidates, BATCH_SIZE)
     for i, batch in enumerate(batches, 1):
         logger.info(f"批次 {i}/{len(batches)}: 生成 {len(batch)} 条 (累计匹配 {len(by_url)})")
-        parsed = _call_llm_once(llm_cfg, cfg, batch, persona_assignments)
+        parsed = _call_llm_once(llm_cfg, cfg, batch, persona_assignments, profile_guides)
         for x in parsed:
             url = x.get("url", "")
             if url and url not in by_url:
@@ -1016,9 +1108,9 @@ def tweet_generator_node(state: TweetGeneratorInput) -> TweetGeneratorOutput:
             "【单条专项生成】只生成下面这一条素材，所有字段必须完整输出："
             "unique_id/url/title/category/heat_score/platform/tweet_content/other_title/other_content/other_tags/image_prompt。"
             "platform 只能是 仅X 或 X+小红书。如果 platform=仅X，other_title/other_content/image_prompt 为空字符串，other_tags 为空数组。\n\n"
-            + json.dumps([_material_payload(mat, persona_assignments)], ensure_ascii=False, indent=2)
+            + json.dumps([_material_payload(mat, persona_assignments, profile_guides)], ensure_ascii=False, indent=2)
         )
-        single_parsed = _call_llm_once(llm_cfg, single_cfg, [mat], persona_assignments)
+        single_parsed = _call_llm_once(llm_cfg, single_cfg, [mat], persona_assignments, profile_guides)
         for x in single_parsed:
             url = x.get("url", "")
             if url:
@@ -1045,15 +1137,15 @@ def tweet_generator_node(state: TweetGeneratorInput) -> TweetGeneratorOutput:
                     "请保留素材事实和 X 内容方向，重点重写小红书字段：标题 8-30 字，正文 120-450 字，"
                     "讲清普通用户/打工人/创作者/创业者谁受影响、怎么用或怎么避坑，标签 3-8 个，配图提示词 30-220 字。"
                     "只返回 JSON 数组。\n\n"
-                    + json.dumps([_material_payload(mat, persona_assignments)], ensure_ascii=False, indent=2)
+                    + json.dumps([_material_payload(mat, persona_assignments, profile_guides)], ensure_ascii=False, indent=2)
                 )
             else:
                 repair_cfg["up"] = (
                     "【质量修复】上一版没有通过质量门禁。请只根据素材重写这一条，重点修复 X 首行 hook、具体事实、影响/风险/机会；"
                     "如果适合小红书，再写小红书；不适合就 platform=仅X。只返回 JSON 数组。\n\n"
-                    + json.dumps([_material_payload(mat, persona_assignments)], ensure_ascii=False, indent=2)
+                    + json.dumps([_material_payload(mat, persona_assignments, profile_guides)], ensure_ascii=False, indent=2)
                 )
-            repaired = _call_llm_once(llm_cfg, repair_cfg, [mat], persona_assignments)
+            repaired = _call_llm_once(llm_cfg, repair_cfg, [mat], persona_assignments, profile_guides)
             if repaired:
                 draft, repair_reason = _build_draft(mat, repaired[0], strategy)
                 if draft is None and reject_reason.startswith("xhs_failed:"):

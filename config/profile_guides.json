@@ -1,0 +1,180 @@
+{
+  "_comment": "Profile-aware Newsroom Style Guide (2026-07-26)。每个素材根据分类选一个 profile，profile 指南注入到 tweet_generator system prompt。让不同来源的素材获得匹配的写作风格。",
+  "_design": "5 个 profile，按 category / source 选。必含：audience / tone / preferred_topics / low_value_signals / banned_title_phrases / banned_inline_phrases / must_have_actionable / sample_title / sample_tweet。",
+  "_usage": "tweet_generator_node.py 根据 material.category / source 选 profile，把 profile 块注入到 sp 的 {{active_profile_guide}} 模板变量。",
+
+  "profiles": {
+    "ai_tools_consumer": {
+      "label": "AI 工具消费者",
+      "audience": "想用 AI 工具但不懂技术的普通人 — 学生党 / 打工人 / 创作者 / 宝妈",
+      "editorial_tone": ["实测", "对比", "避坑", "平替", "价格"],
+      "preferred_topics": [
+        "AI 工具新功能",
+        "AI 工具涨价/降价",
+        "AI 工具平替",
+        "AI 工具上手教程",
+        "AI 工具翻车",
+        "AI 工具免费替代"
+      ],
+      "low_value_signals": [
+        "API 细节",
+        "SDK 参数",
+        "底层框架",
+        "benchmark 排名"
+      ],
+      "banned_title_phrases": [
+        "一文看懂", "重磅", "炸裂", "杀疯了", "颠覆", "AI 速递", "全网首发", "今日快报"
+      ],
+      "banned_inline_phrases": [
+        "本质上", "这意味着", "值得关注的是", "未来有望", "赋能", "重塑", "引领"
+      ],
+      "must_have_actionable_item": true,
+      "platform_priority": "X+小红书",
+      "sample_title": "ChatGPT 涨价到 25 美元，这 3 个免费替代够用",
+      "sample_tweet": "ChatGPT Pro 涨价到 25 美元/月。如果你是轻度用户，每月花这笔钱不划算。\n\n试了 3 个真免费的：\n1. Claude（每天 50 条，代码能力强）\n2. 豆包（国内访问快）\n3. 文心一言（百度账号直接登，送额度）\n\n轻度办公、写作、翻译、日常问答，这 3 个完全够用。"
+    },
+
+    "dev_framework": {
+      "label": "开发者框架",
+      "audience": "开发者 + 想学技术的产品经理",
+      "editorial_tone": ["简洁", "impact-driven", "代码示例", "实际用法"],
+      "preferred_topics": [
+        "新 API/SDK 重要变更",
+        "新框架/工具",
+        "开源库更新",
+        "性能优化"
+      ],
+      "low_value_signals": [
+        "纯圈内八卦",
+        "PR 活动",
+        "营销内容"
+      ],
+      "banned_title_phrases": [
+        "一文看懂", "值得收藏", "建议学习"
+      ],
+      "banned_inline_phrases": [
+        "赋能", "重塑", "开启新篇章", "总的来说"
+      ],
+      "must_have_actionable_item": true,
+      "platform_priority": "仅X 或 X+小红书",
+      "sample_title": "LangChain 新版 v1.5.1 改了 3 个影响你的 API",
+      "sample_tweet": "LangChain v1.5.1 改了 3 个你可能正在用的 API。\n\n1. RunnableSequence.invoke 改签名（影响 80% 项目）\n2. AgentExecutor deprecation 提前到 1.6（用 LangGraph 替代）\n3. Tool 装饰器重命名（@tool → @structured_tool）\n\n升级前 grep 一下你的代码，今天能搞定。"
+    },
+
+    "industry_business": {
+      "label": "行业商业",
+      "audience": "关注 AI 行业格局的从业者、投资者、创业者",
+      "editorial_tone": ["客观", "新闻腔", "数据驱动"],
+      "preferred_topics": [
+        "重要融资/收购",
+        "重大人事变动",
+        "市场份额变化",
+        "监管政策"
+      ],
+      "low_value_signals": [
+        "过度解读",
+        "投资建议",
+        "股价预测"
+      ],
+      "banned_title_phrases": [
+        "震惊", "炸裂", "重磅来袭"
+      ],
+      "banned_inline_phrases": [
+        "颠覆", "重塑", "新时代", "新纪元", "黑马"
+      ],
+      "must_have_actionable_item": false,
+      "platform_priority": "仅X",
+      "sample_title": "Anthropic 估值 2000 亿美元，新一轮融资 50 亿",
+      "sample_tweet": "Anthropic 新一轮融资 50 亿美元，估值 2000 亿，是上一轮 4 倍。\n\n意味着：\n- 算力投资继续加码\n- Claude 价格战空间收窄\n- 头部公司估值溢价继续扩大\n\n跟普通人短期无直接关系，但 Claude API 涨价的可能性在上升。"
+    },
+
+    "risk_privacy": {
+      "label": "风险隐私",
+      "audience": "担心 AI 风险 + 寻找替代品的用户",
+      "editorial_tone": ["警告", "避坑", "平替", "影响谁"],
+      "preferred_topics": [
+        "隐私泄露",
+        "安全漏洞",
+        "封号/下架",
+        "价格变化",
+        "数据收集争议",
+        "AI 翻车案例"
+      ],
+      "low_value_signals": [
+        "洗白文章",
+        "营销文",
+        "官方话术"
+      ],
+      "banned_title_phrases": [
+        "一文看懂", "深度分析", "专家解读"
+      ],
+      "banned_inline_phrases": [
+        "本质上", "不可避免", "总的来说", "综上所述"
+      ],
+      "must_have_actionable_item": true,
+      "platform_priority": "X+小红书",
+      "sample_title": "这类 AI 工具会偷你的聊天记录，3 个方法自查",
+      "sample_tweet": "有些 AI 工具会拿你的对话训练模型，普通人不知不觉。\n\n3 个自查方法：\n1. 设置 → 隐私 → 关「允许用于训练」\n2. 不要粘贴公司机密/医疗/法律内容\n3. 用完敏感对话点删除（部分工具同步删除）\n\n⚠️ 重点：免费版默认收集的多，付费版不一定。具体看条款。"
+    },
+
+    "open_source_release": {
+      "label": "开源发布",
+      "audience": "开发者 / 极客 / 想尝鲜的工具党",
+      "editorial_tone": ["简洁", "demo-driven", "上手快"],
+      "preferred_topics": [
+        "GitHub 热门项目",
+        "AI 模型权重发布",
+        "实用工具新版本",
+        "demo 截图"
+      ],
+      "low_value_signals": [
+        "项目历史回顾",
+        "作者访谈",
+        "融资八卦"
+      ],
+      "banned_title_phrases": [
+        "又一神器", "终于来了", "全网首发"
+      ],
+      "banned_inline_phrases": [
+        "重塑", "颠覆", "开启新时代"
+      ],
+      "must_have_actionable_item": true,
+      "platform_priority": "X+小红书",
+      "sample_title": "这个 3k star 的开源工具，把 AI 编程门槛砍到 1 行",
+      "sample_tweet": "OpenHands 3k star，把 AI 编程从 prompt 写到「点按钮」。\n\n用法：\n1. git clone + npm i\n2. 写自然语言：「帮我修这个 bug」\n3. 工具自己读代码、跑测试、提 PR\n\n实测 5 个常见任务：4 个能直接交付，1 个需要人复核。"
+    }
+  },
+
+  "_selection_rules": {
+    "_comment": "tweet_generator_node.py 用这套规则选 profile",
+    "by_category": {
+      "AI 产品": "ai_tools_consumer",
+      "模型发布": "dev_framework",
+      "工具实测": "ai_tools_consumer",
+      "行业热点": "industry_business",
+      "效率工具": "ai_tools_consumer",
+      "争议事件": "risk_privacy",
+      "行业动态": "industry_business",
+      "开源项目": "open_source_release",
+      "安全隐私": "risk_privacy",
+      "网络工具": "risk_privacy",
+      "论文研究": "dev_framework",
+      "多模态生成": "ai_tools_consumer",
+      "综合资讯": "ai_tools_consumer"
+    },
+    "by_source": {
+      "github": "open_source_release",
+      "ainews": "dev_framework",
+      "rss": "ai_tools_consumer",
+      "tavily": "ai_tools_consumer",
+      "aihot": "ai_tools_consumer",
+      "newsnow": "industry_business",
+      "jiqizhixin": "dev_framework",
+      "qbitai": "ai_tools_consumer",
+      "zhihu": "ai_tools_consumer",
+      "last30days": "ai_tools_consumer",
+      "mediacrawler": "ai_tools_consumer"
+    },
+    "fallback": "ai_tools_consumer"
+  }
+}
