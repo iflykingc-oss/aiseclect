@@ -95,18 +95,20 @@ SOFT_BANNED_PATTERNS = [
 # 兼容别名：旧代码和外部模块可能引用 BANNED_PATTERNS
 BANNED_PATTERNS = HARD_BANNED_PATTERNS + SOFT_BANNED_PATTERNS
 
-# 不适合小红书的硬技术素材：命中且不命中 XHS_FRIENDLY_PATTERNS 时强制仅X。
+# 强制仅X 触发模式（2026-07-26 重构，按普通人口径）
+# 新口径：仅 X = 普通用户能看懂但不值得做小红书专题。
+# 硬技术 / API / SDK / 论文 / 框架 本身不直接触发仅 X —— 关键是能不能讲清「对你有什么用」。
+# 只在以下两类场景强制仅X：
+#   1. 网络工具/代理边界（安全原因小红书不能展开配置/教程）
+#   2. 完全无大众价值信号（标题和内容都看不出对普通人有什么用）
 HARD_ONLY_X_PATTERNS = [
-    re.compile(r"\b(API|SDK|endpoint|migration|deprecation|deprecated|benchmark|CUDA|kernel|compiler)\b", re.I),
-    re.compile(r"arxiv|预印本|基准|评测榜|训练技巧|微调|推理框架|端点|迁移|退役|废弃", re.I),
+    # 企业 SaaS 内部更新（Snowflake / Salesforce 等）—— 普通用户无感
     re.compile(r"\b(Snowflake|Databricks|Salesforce|Kubernetes|K8s)\b", re.I),
 ]
 
-# 软性仅X：只对真正只服务学术/研究读者的素材生效。
-# 注意：github / release / repo / CLI 这类词在面向开发者的工具更新里太常见，
-# 不能一刀切，否则所有 GitHub 来源都被踢出小红书。
+# 软性仅X：纯圈内人事/融资/收购（除非能讲清对普通用户影响）
 SOFT_ONLY_X_PATTERNS = [
-    re.compile(r"paper|论文|开源库", re.I),
+    re.compile(r"融资|收购|合并|IPO|人事变动|CEO|CTO|离职|跳槽", re.I),
 ]
 
 # 网络工具 / VPN / proxy 边界：命中这些词的素材小红书只能写公开项目动态、生态与安全，
@@ -119,6 +121,8 @@ XHS_FRIENDLY_PATTERNS = [
     re.compile(r"工具|产品|硬件|眼镜|手机|耳机|视频|图片|图像|音乐|生成|效率|办公|创作者|打工人|隐私|安全|泄露|后门|翻车|涨价|浏览器|搜索|助手|学生|学习|教育|普通人|职场|截图|PDF", re.I),
     re.compile(r"怎么用|如何用|避坑|谁受影响|影响谁|适合谁|价格|权限|风险|教程|案例|工作流|提效", re.I),
     re.compile(r"\b(ChatGPT|Claude|Gemini|Sora|Suno|Cursor|Notion|LLM|Agent|豆包|元宝|可灵|剪映)\b", re.I),
+    # 新模型 / 普通用户能懂的科技关键词（Kimi 3 / DeepSeek / Qwen / 国产模型等）
+    re.compile(r"\b(Kimi|DeepSeek|Qwen|文心一言|通义|豆包|GPT|Grok|Llama|Mistral)\b"),
 ]
 
 IMPACT_PATTERNS = [
@@ -421,17 +425,26 @@ def _material_text(mat: ScoredMaterial) -> str:
 
 
 def _force_only_x(mat: ScoredMaterial) -> bool:
+    """判断是否强制仅X。
+
+    新口径（2026-07-26）：仅 X = 普通用户能看懂但不值得做小红书专题。
+    硬技术 / API / 论文 / 框架 本身不直接触发仅 X —— 关键是能不能讲清「对你有什么用」。
+    只在以下场景强制仅X：
+    1. 网络工具/代理边界（安全原因小红书不能展开配置/教程）
+    2. 企业 SaaS 内部更新（Snowflake / Salesforce 等）—— 普通用户无感
+    3. 纯圈内人事/融资/收购（除非能讲清对普通用户影响）
+    """
     text = _material_text(mat)
     is_xhs_friendly = any(p.search(text) for p in XHS_FRIENDLY_PATTERNS)
     is_proxy_boundary = any(p.search(text) for p in PROXY_BOUNDARY_PATTERNS)
 
-    # 硬技术关键词 + 完全无普通用户场景 → 强制仅X（恢复 is_xhs_friendly 豁免）
+    # 路径 1：企业 SaaS 内部更新 + 无大众场景 → 强制仅X
     if any(p.search(text) for p in HARD_ONLY_X_PATTERNS) and not is_xhs_friendly:
         return True
-    # 论文/学术 → 没有明确使用价值转译，仅X
+    # 路径 2：纯圈内人事/融资/收购 + 无大众场景 → 强制仅X
     if any(p.search(text) for p in SOFT_ONLY_X_PATTERNS) and not is_xhs_friendly:
         return True
-    # GitHub / watchlist 来源 + 命中网络工具边界 + 完全无普通用户场景 → 仅X
+    # 路径 3：网络工具边界（Xray/VPN/翻墙）+ 完全无普通用户场景 → 强制仅X
     # 关键是：只要素材里有任何「普通用户场景词」就放行小红书
     if (
         any(k in (mat.source or "") for k in ("github", "watchlist"))
