@@ -187,6 +187,25 @@ class FeishuClient:
             return []
         return (data.get("data") or {}).get("records") or []
 
+    def update_record(self, app_token: str, table_id: str, record_id: str, fields: Dict[str, Any]) -> bool:
+        """更新单条记录的 fields。返回是否成功。2026-07-27 新增。"""
+        try:
+            resp = requests.put(
+                f"{FEISHU_BASE}/bitable/v1/apps/{app_token}/tables/{table_id}/records/{record_id}",
+                headers=self._headers(),
+                json={"fields": fields},
+                params={"user_id_type": "open_id"},
+                timeout=self.timeout,
+            )
+            data = self._safe_json(resp)
+            if data.get("code") != 0:
+                logger.error(f"update_record 失败: {data.get('msg')}")
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"update_record 异常: {e}")
+            return False
+
     def list_records(self, app_token: str, table_id: str) -> List[Dict[str, Any]]:
         """列出表内全部记录（自动翻页），返回 record_id + fields。"""
         records: List[Dict[str, Any]] = []
