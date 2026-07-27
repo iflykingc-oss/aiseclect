@@ -96,3 +96,8 @@ class TweetDraft(BaseModel):
     xiaohongshu_tags: List[str] = Field(default_factory=list)  # LEGACY: 已被 other_tags 替代
     is_thread: bool = False                          # RESERVED: 长推拆分（暂未启用）
     thread_parts: List[str] = Field(default_factory=list)  # RESERVED: 长推拆分（暂未启用）
+    # === 2026-07-26 质量复盘（LLM-as-judge）===
+    review_overall_score: float = 0.0
+    review_recommended_action: str = ""  # publish | revise | block
+    review_summary: str = ""
+    review_issues: List[dict] = Field(default_factory=list, description="[{category, severity, message, suggestion, auto_fixable}, ...]")

@@ -37,6 +37,7 @@ from collect_pipeline.editorial_memory import (
     load_memory,
     render_memory_summary,
 )
+from collect_pipeline.quality_review import review_drafts
 from graphs.nodes.length_validator import post_generation_check
 from graphs.state import (
     ScoredMaterial,
@@ -54,6 +55,19 @@ from tools.llm import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def asdict_issue(issue) -> dict:
+    """Helper：把 ReviewIssue 转成 dict。"""
+    if isinstance(issue, dict):
+        return issue
+    return {
+        "category": getattr(issue, "category", ""),
+        "severity": getattr(issue, "severity", "low"),
+        "message": getattr(issue, "message", ""),
+        "suggestion": getattr(issue, "suggestion", ""),
+        "auto_fixable": getattr(issue, "auto_fixable", False),
+    }
 
 BATCH_SIZE = 8  # 单次 LLM 调用素材上限（从 5 提升到 8 以减少调用次数）
 PLATFORM_ONLY_X = "仅X"
@@ -1241,6 +1255,26 @@ def tweet_generator_node(state: TweetGeneratorInput) -> TweetGeneratorOutput:
         f"内容生成: 命中 {len(drafts)} 条 / 丢弃 {dropped_no_llm} (无LLM) + {dropped_quality} (质量门禁) "
         f"/ 小红书内容 {general_count} / 仅X {only_x_count}"
     )
+
+    # 2026-07-26: 跑第二轮 LLM 复盘（7 维评分 + recommended_action）
+    if drafts:
+        try:
+            reviews = review_drafts(drafts, workspace=workspace)
+            for d in drafts:
+                r = reviews.get(d.url)
+                if r is None:
+                    continue
+                d.review_overall_score = r.overall_score
+                d.review_recommended_action = r.recommended_action
+                d.review_summary = r.summary
+                d.review_issues = [asdict_issue(i) for i in r.issues] if r.issues else []
+            logger.info(
+                f"质量复盘: {len(reviews)}/{len(drafts)} 草稿被复盘 / "
+                f"block {sum(1 for r in reviews.values() if r.recommended_action == 'block')}"
+            )
+        except Exception as e:
+            logger.warning(f"质量复盘失败（继续输出）: {e}")
+
     return TweetGeneratorOutput(
         tweet_drafts=drafts,
         total_tweets=len(drafts),
