@@ -37,7 +37,7 @@ from collect_pipeline.editorial_memory import (
     load_memory,
     render_memory_summary,
 )
-from collect_pipeline.quality_review import review_drafts
+from collect_pipeline.quality_review import auto_revise_draft, review_drafts
 from graphs.nodes.length_validator import post_generation_check
 from graphs.state import (
     ScoredMaterial,
@@ -1270,10 +1270,26 @@ def tweet_generator_node(state: TweetGeneratorInput) -> TweetGeneratorOutput:
                 d.review_issues = [asdict_issue(i) for i in r.issues] if r.issues else []
             logger.info(
                 f"质量复盘: {len(reviews)}/{len(drafts)} 草稿被复盘 / "
-                f"block {sum(1 for r in reviews.values() if r.recommended_action == 'block')}"
+                f"block {sum(1 for r in reviews.values() if r.recommended_action == 'block')} / "
+                f"revise {sum(1 for r in reviews.values() if r.recommended_action == 'revise')}"
             )
+
+            # 2026-07-26: auto-revision 闭环 —— 对 recommended_action=revise + 有 auto_fixable_issues 的草稿
+            # 调 LLM 修复一轮（max_rounds=1 防成本爆炸）
+            revised_count = 0
+            for d in drafts:
+                r = reviews.get(d.url)
+                if not r or r.recommended_action != "revise":
+                    continue
+                if not any(i.get("auto_fixable") for i in d.review_issues):
+                    continue
+                revised_d, _, rounds = auto_revise_draft(d, r, workspace=workspace, max_rounds=1)
+                if rounds > 0:
+                    revised_count += 1
+            if revised_count:
+                logger.info(f"auto_revsion: {revised_count} 草稿已自动修复一轮")
         except Exception as e:
-            logger.warning(f"质量复盘失败（继续输出）: {e}")
+            logger.warning(f"质量复盘/修复失败（继续输出）: {e}")
 
     return TweetGeneratorOutput(
         tweet_drafts=drafts,
