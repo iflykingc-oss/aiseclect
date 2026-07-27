@@ -31,6 +31,12 @@ from collect_pipeline.growth_taxonomy import (
     summarize_growth_scores,
 )
 from collect_pipeline.humanizer import humanize_draft
+from collect_pipeline.editorial_memory import (
+    MemoryItem,
+    append_to_memory,
+    load_memory,
+    render_memory_summary,
+)
 from graphs.nodes.length_validator import post_generation_check
 from graphs.state import (
     ScoredMaterial,
@@ -329,6 +335,15 @@ def _build_messages(llm_cfg: LLMConfig, cfg: dict, materials: List[ScoredMateria
         sp = base_sp.replace("{{profile_guides}}", profile_block)
     else:
         sp = base_sp + "\n\n" + profile_block
+
+    # 2026-07-26: 注入编辑记忆（最近已做过的角度，避免重复）
+    try:
+        memory = load_memory()
+        memory_block = render_memory_summary(memory)
+        if memory_block:
+            sp = sp + "\n\n" + memory_block
+    except Exception as e:
+        logger.debug(f"editorial_memory 注入失败: {e}")
 
     return [
         SystemMessage(content=sp),
@@ -1206,6 +1221,19 @@ def tweet_generator_node(state: TweetGeneratorInput) -> TweetGeneratorOutput:
             reject_events.append(_reject_event(mat, _classify_reject(reject_reason), reject_reason, data))
             continue
         drafts.append(draft)
+        # 2026-07-26: 把成功的草稿写入编辑记忆，避免下次重复同一角度
+        try:
+            append_to_memory(MemoryItem(
+                unique_id=draft.unique_id,
+                title=draft.title or mat.title,
+                source=mat.source or "",
+                category=draft.category or mat.category,
+                platform=draft.platform or "",
+                quality_score=max(draft.x_quality_score, draft.xhs_quality_score),
+                pillar=draft.xhs_pillar or "",
+            ))
+        except Exception as e:
+            logger.debug(f"editorial_memory append 失败: {e}")
 
     general_count = sum(1 for d in drafts if d.platform == PLATFORM_GENERAL and d.other_content)
     only_x_count = sum(1 for d in drafts if d.platform == PLATFORM_ONLY_X)
