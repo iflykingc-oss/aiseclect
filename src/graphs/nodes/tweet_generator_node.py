@@ -280,7 +280,7 @@ def _chunked(items: list, size: int) -> list:
     return [items[i : i + size] for i in range(0, len(items), size)]
 
 
-def _material_payload(m: ScoredMaterial, persona_assignments: dict, profile_guides: Dict[str, Any]) -> dict:
+def _material_payload(m: ScoredMaterial, persona_assignments: dict, profile_guides: Dict[str, Any], router_decisions: Optional[Dict[str, Any]] = None) -> dict:
     """给 LLM 的素材 JSON；只传已有字段，不新增内部输出字段。"""
     payload = {
         "url": m.url,
@@ -294,6 +294,16 @@ def _material_payload(m: ScoredMaterial, persona_assignments: dict, profile_guid
         "_profile": _select_profile_for_material(m, profile_guides),
         "extra_data": m.extra_data,
     }
+    # 2026-07-26: 注入 platform_router 决策（如有），LLM 据此强制 platform 字段
+    if router_decisions and m.url in router_decisions:
+        rd = router_decisions[m.url]
+        if isinstance(rd, dict):
+            payload["_router_decision"] = {
+                "platform": rd.get("platform", ""),
+                "platform_reason": rd.get("platform_reason", ""),
+                "score": rd.get("score", 0),
+                "recommended_pillar": rd.get("recommended_pillar", ""),
+            }
     optional = {
         "publish_time": m.publish_time,
         "score_reason": m.score_reason,
@@ -304,11 +314,11 @@ def _material_payload(m: ScoredMaterial, persona_assignments: dict, profile_guid
     return payload
 
 
-def _build_messages(llm_cfg: LLMConfig, cfg: dict, materials: List[ScoredMaterial], persona_assignments: dict, profile_guides: Dict[str, Any]):
-    """构造 LLM 调用消息，把写作视角分配 + profile 指南注入到 system prompt。"""
+def _build_messages(llm_cfg: LLMConfig, cfg: dict, materials: List[ScoredMaterial], persona_assignments: dict, profile_guides: Dict[str, Any], router_decisions: Optional[Dict[str, Any]] = None):
+    """构造 LLM 调用消息，把写作视角分配 + profile 指南 + router 决策注入到 system prompt。"""
     from langchain_core.messages import SystemMessage, HumanMessage
 
-    materials_data = [_material_payload(m, persona_assignments, profile_guides) for m in materials]
+    materials_data = [_material_payload(m, persona_assignments, profile_guides, router_decisions) for m in materials]
     materials_json = json.dumps(materials_data, ensure_ascii=False, indent=2)
     user_prompt = Template(cfg.get("up", "")).render(materials_json=materials_json)
 
@@ -409,13 +419,13 @@ def _render_profile_guides_block(profile_guides: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _call_llm_once(llm_cfg: LLMConfig, cfg: dict, materials: List[ScoredMaterial], persona_assignments: dict, profile_guides: Dict[str, Any]) -> List[dict]:
+def _call_llm_once(llm_cfg: LLMConfig, cfg: dict, materials: List[ScoredMaterial], persona_assignments: dict, profile_guides: Dict[str, Any], router_decisions: Optional[Dict[str, Any]] = None) -> List[dict]:
     """单次 LLM 调用。"""
     if not materials:
         return []
     try:
         model = build_chat_model(llm_cfg)
-        messages = _build_messages(llm_cfg, cfg, materials, persona_assignments, profile_guides)
+        messages = _build_messages(llm_cfg, cfg, materials, persona_assignments, profile_guides, router_decisions)
         resp = invoke_with_retry(model, messages)
         text = extract_text(resp.content)
         logger.info(f"推文 LLM 响应前 800 字符: {text[:800]}")
@@ -503,6 +513,23 @@ def _normalize_generated_payload(data: dict) -> dict:
     normalized["other_tags"] = _normalize_tags(normalized.get("other_tags"))
     normalized["platform"] = _normalize_platform(normalized.get("platform"), normalized)
     return normalized
+
+
+def _apply_router_decision(data: dict, url: str, router_decisions: Optional[Dict[str, Any]]) -> dict:
+    """2026-07-26: 用 platform_router 的决策覆盖 LLM 输出（如果 router 有）。"""
+    if not router_decisions or not url:
+        return data
+    rd = router_decisions.get(url)
+    if not isinstance(rd, dict):
+        return data
+    router_platform = rd.get("platform", "")
+    if router_platform in (PLATFORM_ONLY_X, PLATFORM_GENERAL):
+        old = data.get("platform", "")
+        if old != router_platform:
+            logger.info(f"router 覆盖 LLM platform: {url[:60]} {old} → {router_platform}")
+            data["platform"] = router_platform
+            data["platform_reason"] = (data.get("platform_reason", "") + f" | router:{rd.get('platform_reason','')}").strip(" |")
+    return data
 
 
 def _material_text(mat: ScoredMaterial) -> str:
@@ -930,7 +957,9 @@ def _clean_tweet_text(s: str) -> str:
 
 
 
-def _build_draft(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any]) -> Tuple[TweetDraft | None, str]:
+def _build_draft(mat: ScoredMaterial, data: dict, strategy: Dict[str, Any], router_decisions: Optional[Dict[str, Any]] = None) -> Tuple[TweetDraft | None, str]:
+    # 2026-07-26: 在 LLM 输出后用 platform_router 决策覆盖 platform
+    data = _apply_router_decision(data, mat.url, router_decisions)
     """从 LLM 生成的 dict 构造 TweetDraft。返回 (draft, reject_reason)。"""
     data = _normalize_generated_payload(data)
 
@@ -1090,11 +1119,16 @@ def tweet_generator_node(state: TweetGeneratorInput) -> TweetGeneratorOutput:
         for m in candidates
     }
 
+    # 2026-07-26: 注入 platform_router 决策（如有）。LLM 仍可在 prompt 里读到 router 评分和理由
+    router_decisions = getattr(state, "platform_decisions", {}) or {}
+    if router_decisions:
+        logger.info(f"platform_router 决策已注入: {len(router_decisions)} 条（{sum(1 for d in router_decisions.values() if isinstance(d, dict) and d.get('platform') == 'X+小红书')} X+小红书 / {sum(1 for d in router_decisions.values() if isinstance(d, dict) and d.get('platform') == '仅X')} 仅X）")
+
     by_url: dict = {}
     batches = _chunked(candidates, BATCH_SIZE)
     for i, batch in enumerate(batches, 1):
         logger.info(f"批次 {i}/{len(batches)}: 生成 {len(batch)} 条 (累计匹配 {len(by_url)})")
-        parsed = _call_llm_once(llm_cfg, cfg, batch, persona_assignments, profile_guides)
+        parsed = _call_llm_once(llm_cfg, cfg, batch, persona_assignments, profile_guides, router_decisions)
         for x in parsed:
             url = x.get("url", "")
             if url and url not in by_url:
@@ -1108,9 +1142,9 @@ def tweet_generator_node(state: TweetGeneratorInput) -> TweetGeneratorOutput:
             "【单条专项生成】只生成下面这一条素材，所有字段必须完整输出："
             "unique_id/url/title/category/heat_score/platform/tweet_content/other_title/other_content/other_tags/image_prompt。"
             "platform 只能是 仅X 或 X+小红书。如果 platform=仅X，other_title/other_content/image_prompt 为空字符串，other_tags 为空数组。\n\n"
-            + json.dumps([_material_payload(mat, persona_assignments, profile_guides)], ensure_ascii=False, indent=2)
+            + json.dumps([_material_payload(mat, persona_assignments, profile_guides, router_decisions)], ensure_ascii=False, indent=2)
         )
-        single_parsed = _call_llm_once(llm_cfg, single_cfg, [mat], persona_assignments, profile_guides)
+        single_parsed = _call_llm_once(llm_cfg, single_cfg, [mat], persona_assignments, profile_guides, router_decisions)
         for x in single_parsed:
             url = x.get("url", "")
             if url:
@@ -1128,7 +1162,7 @@ def tweet_generator_node(state: TweetGeneratorInput) -> TweetGeneratorOutput:
             reject_events.append(_reject_event(mat, REJECT_KIND_NO_LLM, reason))
             logger.warning(f"{reason}, drop: {mat.url} | {mat.title[:60]}")
             continue
-        draft, reject_reason = _build_draft(mat, data, strategy)
+        draft, reject_reason = _build_draft(mat, data, strategy, router_decisions)
         if draft is None:
             repair_cfg = {**cfg}
             if reject_reason.startswith("xhs_failed:"):
@@ -1137,19 +1171,19 @@ def tweet_generator_node(state: TweetGeneratorInput) -> TweetGeneratorOutput:
                     "请保留素材事实和 X 内容方向，重点重写小红书字段：标题 8-30 字，正文 120-450 字，"
                     "讲清普通用户/打工人/创作者/创业者谁受影响、怎么用或怎么避坑，标签 3-8 个，配图提示词 30-220 字。"
                     "只返回 JSON 数组。\n\n"
-                    + json.dumps([_material_payload(mat, persona_assignments, profile_guides)], ensure_ascii=False, indent=2)
+                    + json.dumps([_material_payload(mat, persona_assignments, profile_guides, router_decisions)], ensure_ascii=False, indent=2)
                 )
             else:
                 repair_cfg["up"] = (
                     "【质量修复】上一版没有通过质量门禁。请只根据素材重写这一条，重点修复 X 首行 hook、具体事实、影响/风险/机会；"
                     "如果适合小红书，再写小红书；不适合就 platform=仅X。只返回 JSON 数组。\n\n"
-                    + json.dumps([_material_payload(mat, persona_assignments, profile_guides)], ensure_ascii=False, indent=2)
+                    + json.dumps([_material_payload(mat, persona_assignments, profile_guides, router_decisions)], ensure_ascii=False, indent=2)
                 )
-            repaired = _call_llm_once(llm_cfg, repair_cfg, [mat], persona_assignments, profile_guides)
+            repaired = _call_llm_once(llm_cfg, repair_cfg, [mat], persona_assignments, profile_guides, router_decisions)
             if repaired:
-                draft, repair_reason = _build_draft(mat, repaired[0], strategy)
+                draft, repair_reason = _build_draft(mat, repaired[0], strategy, router_decisions)
                 if draft is None and reject_reason.startswith("xhs_failed:"):
-                    draft, downgrade_reason = _build_draft(mat, _downgrade_to_only_x(data), strategy)
+                    draft, downgrade_reason = _build_draft(mat, _downgrade_to_only_x(data), strategy, router_decisions)
                     if draft is None:
                         reject_reason = f"首次失败: {reject_reason}; 小红书修复后失败: {repair_reason}; 降级仅X失败: {downgrade_reason}"
                     else:
@@ -1159,7 +1193,7 @@ def tweet_generator_node(state: TweetGeneratorInput) -> TweetGeneratorOutput:
                     reject_reason = f"首次失败: {reject_reason}; 修复后失败: {repair_reason}"
             else:
                 if reject_reason.startswith("xhs_failed:"):
-                    draft, downgrade_reason = _build_draft(mat, _downgrade_to_only_x(data), strategy)
+                    draft, downgrade_reason = _build_draft(mat, _downgrade_to_only_x(data), strategy, router_decisions)
                     if draft is None:
                         reject_reason = f"首次失败: {reject_reason}; 小红书修复调用无结果; 降级仅X失败: {downgrade_reason}"
                     else:

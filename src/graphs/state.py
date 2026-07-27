@@ -315,6 +315,7 @@ class TweetGeneratorInput(BaseModel):
     cleaned_materials: List[ScoredMaterial] = Field(default_factory=list)
     min_heat_score: float = 0.0
     max_tweets: int = 18
+    platform_decisions: dict = Field(default_factory=dict, description="url → PlatformDecision（来自 platform_router_node）")
 
 
 class TweetGeneratorOutput(BaseModel):

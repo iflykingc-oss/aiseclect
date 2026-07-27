@@ -50,6 +50,8 @@ from graphs.state import (
     ContentEnricherOutput,
     ContentCleanerInput,
     ContentCleanerOutput,
+    PlatformRouterInput,
+    PlatformRouterOutput,
     TweetGeneratorInput,
     TweetGeneratorOutput,
 )
@@ -74,6 +76,7 @@ from graphs.nodes.heat_scorer_node import heat_scorer_node
 from graphs.nodes.event_cluster_node import event_cluster_node
 from graphs.nodes.content_enricher_node import content_enricher_node
 from graphs.nodes.content_cleaner_node import content_cleaner_node
+from graphs.nodes.platform_router_node import platform_router_node
 from graphs.nodes.tweet_generator_node import tweet_generator_node
 from graphs.nodes.xiaohongshu_generator_node import xiaohongshu_generator_node
 from graphs.nodes.feishu_writer_node import feishu_writer_node
@@ -105,6 +108,7 @@ def _select(state: GlobalState, key: str):
         "event_cluster": EventClusterInput,
         "content_enricher": ContentEnricherInput,
         "content_cleaner": ContentCleanerInput,
+        "platform_router": PlatformRouterInput,
         "tweet_generator": TweetGeneratorInput,
         "feishu_writer": FeishuWriterInput,
     }
@@ -151,6 +155,7 @@ builder.add_node("heat_scorer", _wrap("heat_scorer", heat_scorer_node))
 builder.add_node("event_cluster", _wrap("event_cluster", event_cluster_node))
 builder.add_node("content_enricher", _wrap("content_enricher", content_enricher_node))
 builder.add_node("content_cleaner", _wrap("content_cleaner", content_cleaner_node))
+builder.add_node("platform_router", _wrap("platform_router", platform_router_node))
 builder.add_node("tweet_generator", _wrap("tweet_generator", tweet_generator_node))
 builder.add_node("xiaohongshu_generator", _wrap("tweet_generator", xiaohongshu_generator_node))
 builder.add_node("feishu_writer", _wrap("feishu_writer", feishu_writer_node))
@@ -181,6 +186,7 @@ builder.add_edge("dedup_filter", "heat_scorer")
 builder.add_edge("heat_scorer", "event_cluster")
 builder.add_edge("event_cluster", "content_enricher")
 builder.add_edge("content_enricher", "content_cleaner")
+builder.add_edge("content_cleaner", "platform_router")
 
 
 def route_to_generator(state: GlobalState) -> str:
