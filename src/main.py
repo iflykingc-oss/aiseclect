@@ -13,6 +13,9 @@ import json
 import logging
 import os
 import sys
+
+# 2026-07-27: langgraph 1.0 的 `allowed_objects` 默认值弃用警告
+# 已在 src/graphs/__init__.py 入口处屏蔽，避免 import 时刷屏
 from pathlib import Path
 from typing import Any, Dict
 
